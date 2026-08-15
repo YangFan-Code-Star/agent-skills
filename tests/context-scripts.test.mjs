@@ -267,6 +267,34 @@ test("--help 显示用法并以 0 退出", () => {
   assert.match(r.stdout, /用法：node scaffold\.mjs/);
 });
 
+test("CONTEXT_DEV_VERSION 在 scaffold 与 audit 两份脚本中一致", () => {
+  const scaffoldText = readFileSync(SCAFFOLD, "utf8");
+  const auditText = readFileSync(TEMPLATE_AUDIT, "utf8");
+  const versionRe = /CONTEXT_DEV_VERSION = "([^"]+)"/;
+  const scaffoldVersion = scaffoldText.match(versionRe)?.[1];
+  const auditVersion = auditText.match(versionRe)?.[1];
+  assert.ok(scaffoldVersion, "scaffold.mjs 缺少 CONTEXT_DEV_VERSION");
+  assert.ok(auditVersion, "audit-context.mjs 缺少 CONTEXT_DEV_VERSION");
+  assert.equal(auditVersion, scaffoldVersion, "两份脚本的 CONTEXT_DEV_VERSION 不一致");
+});
+
+test("audit --root 能体检指定目录；--help 显示用法", () => {
+  const help = node([TEMPLATE_AUDIT, "--help"]);
+  assert.equal(help.status, 0);
+  assert.match(help.stdout, /用法：node scripts\/audit-context\.mjs/);
+
+  const bad = node([TEMPLATE_AUDIT, "--root"]);
+  assert.equal(bad.status, 2);
+  assert.match(bad.stderr, /--root 需要一个目录参数/);
+});
+
+test("audit --root 可以体检框架仓库根（0 error）", () => {
+  const r = node([TEMPLATE_AUDIT, "--root", REPO]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /0 个 error/);
+  assert.match(r.stdout, /结论：0 个 error、\d+ 个 warning/);
+});
+
 test("audit 在未初始化的项目上无 error、TODO 报 warning、退出 0", () =>
   withDir((dir) => {
     scaffoldProject(dir);
@@ -292,7 +320,7 @@ test("audit 在装好全部技能的项目上只有 TODO warning（技能内相�
 // git 不保存 mtime，克隆后所有文件的 mtime 都是同一个 checkout 时间。下面两条构造的正是
 // 那个场景：文件全是刚写出来的（mtime 相同），只有提交时间相差很远。若检查退回 mtime，
 // 两条都会静默通过——那是这个框架最忌讳的"安静地说谎"。
-test("时效性检查读 git 提交时间：mtime 全相同也能发现代码比 AGENTS.md 新", () =>
+test("时效性检查读 git 提交时间：mtime 全相同也能发现项目文件比 AGENTS.md 新", () =>
   withDir((dir) => {
     scaffoldProject(dir);
     commitAt(dir, "2024-01-01T00:00:00+0000", "骨架");
@@ -300,8 +328,8 @@ test("时效性检查读 git 提交时间：mtime 全相同也能发现代码比
     commitAt(dir, "2024-09-01T00:00:00+0000", "代码");
 
     const r = auditIn(dir);
-    assert.match(r.stdout, /代码比 AGENTS\.md 新 \d+ 天（最近改动：main\.js）/);
-    assert.match(r.stdout, /代码比学习收件箱新 \d+ 天且收件箱是空的/);
+    assert.match(r.stdout, /项目文件比 AGENTS\.md 新 \d+ 天（最近改动：main\.js）/);
+    assert.match(r.stdout, /项目文件比学习收件箱新 \d+ 天且收件箱是空的/);
   }));
 
 test("未跟踪的新代码文件按 mtime 参与时效性，不静默漏报", () =>
@@ -311,7 +339,7 @@ test("未跟踪的新代码文件按 mtime 参与时效性，不静默漏报", (
     writeFileSync(join(dir, "main.js"), "console.log(1);\n"); // 未跟踪，git log 看不见
 
     const r = auditIn(dir);
-    assert.match(r.stdout, /代码比 AGENTS\.md 新 \d+ 天（最近改动：main\.js）/);
+    assert.match(r.stdout, /项目文件比 AGENTS\.md 新 \d+ 天（最近改动：main\.js）/);
   }));
 
 test("scripts/ 下的业务脚本参与时效性（只排除 audit-context.mjs 自身）", () =>
@@ -322,7 +350,7 @@ test("scripts/ 下的业务脚本参与时效性（只排除 audit-context.mjs �
     commitAt(dir, "2024-09-01T00:00:00+0000", "业务脚本");
 
     const r = auditIn(dir);
-    assert.match(r.stdout, /代码比 AGENTS\.md 新 \d+ 天（最近改动：scripts\/main\.mjs）/);
+    assert.match(r.stdout, /项目文件比 AGENTS\.md 新 \d+ 天（最近改动：scripts\/main\.mjs）/);
   }));
 
 test("上下文与代码同期提交时不误报过期", () =>
@@ -332,8 +360,8 @@ test("上下文与代码同期提交时不误报过期", () =>
     commitAt(dir, "2024-09-01T00:00:00+0000", "骨架与代码");
 
     const r = auditIn(dir);
-    assert.doesNotMatch(r.stdout, /代码比 AGENTS\.md 新/);
-    assert.doesNotMatch(r.stdout, /代码比学习收件箱新/);
+    assert.doesNotMatch(r.stdout, /项目文件比 AGENTS\.md 新/);
+    assert.doesNotMatch(r.stdout, /项目文件比学习收件箱新/);
   }));
 
 test("收件箱有未提交改动时按 mtime 判定，不把刚转过的闭环误报成从没转", () =>
@@ -349,7 +377,7 @@ test("收件箱有未提交改动时按 mtime 判定，不把刚转过的闭环�
     );
 
     const r = auditIn(dir);
-    assert.doesNotMatch(r.stdout, /代码比学习收件箱新/);
+    assert.doesNotMatch(r.stdout, /项目文件比学习收件箱新/);
     assert.match(r.stdout, /学习收件箱有 1 条待合并候选/);
   }));
 

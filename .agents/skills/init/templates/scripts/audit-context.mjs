@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // 上下文文件体检。零依赖，只做确定性检查。
 // 能被脚本判定的事就不要写成让模型自己判断的散文。
-// 用法：node scripts/audit-context.mjs
+// 用法：node scripts/audit-context.mjs [--root <项目根>] [--help]
+// 默认 ROOT 由脚本自身位置推导（scripts/..）；--root 供框架仓库自检等场景覆盖。
 
 import { readFileSync, statSync, readdirSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -12,7 +13,36 @@ import { fileURLToPath } from "node:url";
 // 想升级：node <技能目录>/scaffold.mjs --update-framework
 const CONTEXT_DEV_VERSION = "0.3.0";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const USAGE = `用法：node scripts/audit-context.mjs [--root <项目根>] [--help]
+
+  --root <目录>  显式指定体检的根目录（默认：脚本所在位置的上一级）
+  --help         显示本帮助`;
+
+const argv = process.argv.slice(2);
+if (argv.includes("--help") || argv.includes("-h")) {
+  console.log(USAGE);
+  process.exit(0);
+}
+const KNOWN_FLAGS = new Set(["--root", "--help", "-h"]);
+for (let i = 0; i < argv.length; i++) {
+  const a = argv[i];
+  if (a === "--root") {
+    if (i + 1 >= argv.length || argv[i + 1].startsWith("-")) {
+      console.error(`--root 需要一个目录参数\n${USAGE}`);
+      process.exit(2);
+    }
+    i++;
+    continue;
+  }
+  if (!KNOWN_FLAGS.has(a)) {
+    console.error(`未知参数：${a}\n${USAGE}`);
+    process.exit(2);
+  }
+}
+const rootFlagIdx = argv.indexOf("--root");
+const ROOT = rootFlagIdx === -1
+  ? resolve(dirname(fileURLToPath(import.meta.url)), "..")
+  : resolve(argv[rootFlagIdx + 1]);
 
 // AGENTS.md 每次对话都全量加载，字节上限是保持精简的自律标杆，超出就该往 docs/ 搬。
 // 行数是主尺，字节是备尺：行数只量根目录一份 AGENTS.md，字节量根目录所有 AGENTS 文件的
@@ -255,7 +285,7 @@ const isContext = (f) => {
 // 只排除框架自己复制过去的 audit-context.mjs——它的改动不能代表业务代码在演进。
 const CONTEXT_EXCLUDES = ["AGENTS.md", "AGENTS.md.tmpl", "AGENTS.override.md", "docs", ".agents", "scripts/audit-context.mjs"];
 
-// 「最近改动的代码文件」用一次 git 调用拿到，避免对每个文件各起一个子进程。
+// 「最近改动的项目文件」用一次 git 调用拿到，避免对每个文件各起一个子进程。
 function newestCodeByGit() {
   const out = gitOut([
     "log", "-1", "--format=%ct", "--name-only",
@@ -306,7 +336,7 @@ const newestCode = HAS_GIT
 if (newestCode && rootAgents) {
   const gapDays = (newestCode.ms - lastChangeMs(rootAgents)) / 86_400_000;
   if (gapDays > STALE_DAYS) {
-    warn(`代码比 AGENTS.md 新 ${Math.round(gapDays)} 天（最近改动：${newestCode.label}），走一遍 /maintain-context`);
+    warn(`项目文件比 AGENTS.md 新 ${Math.round(gapDays)} 天（最近改动：${newestCode.label}），走一遍 /maintain-context`);
   }
 }
 
@@ -367,7 +397,7 @@ if (!existsSync(inboxPath)) {
     // 转动的时间——写入和清空都会更新它——所以不需要额外的状态文件就能把两种含义分开。
     const idleDays = (newestCode.ms - lastChangeMs(inboxPath)) / 86_400_000;
     if (idleDays > STALE_DAYS) {
-      warn(`代码比学习收件箱新 ${Math.round(idleDays)} 天且收件箱是空的，/ship-change 的复盘蒸馏可能一直被跳过`);
+      warn(`项目文件比学习收件箱新 ${Math.round(idleDays)} 天且收件箱是空的，/ship-change 的复盘蒸馏可能一直被跳过`);
     }
   }
 }

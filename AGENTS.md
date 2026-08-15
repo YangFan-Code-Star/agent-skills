@@ -22,10 +22,11 @@ node --test
 | 测试（脚手架与体检脚本的冒烟） | `node --test` |
 | 语法检查 | `node --check .agents/skills/init/scaffold.mjs`、`node --check .agents/skills/init/templates/scripts/audit-context.mjs` |
 | 体检模板树（看输出用） | `node .agents/skills/init/templates/scripts/audit-context.mjs` |
+| 体检仓库根（CI 同款） | `node .agents/skills/init/templates/scripts/audit-context.mjs --root .` |
 
-前两条合起来就是 `.github/workflows/ci.yml` 的全部内容，没有额外的全量档。
+前三条合起来就是 `.github/workflows/ci.yml` 的全部内容，没有额外的全量档。
 
-第三条体检脚本本身已被 `node --test` 覆盖，手动跑只是为了看输出。它的 ROOT 由脚本自身位置推导，所以检查的是 `templates/` 子树而不是仓库根；**报占位符并以 1 退出是正常的**，模板树的合格状态就是「0 error、若干未填充的占位符」。
+体检脚本本身已被 `node --test` 覆盖，手动跑只是为了看输出。不带 `--root` 时 ROOT 由脚本自身位置推导，所以检查的是 `templates/` 子树而不是仓库根；`--root .` 才会体检本仓库根。模板树的合格状态是「0 error、若干占位符 warning」——占位符是 warning 不是 error。仓库根体检的「缺少 docs/learning-inbox.md」warning 是预期：根目录按铁律 4 不补 docs/，学习闭环只存在于 `templates/` 生成的用户项目里。
 
 ## 目录地图
 

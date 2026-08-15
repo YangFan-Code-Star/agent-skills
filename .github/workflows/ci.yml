@@ -16,5 +16,7 @@ jobs:
         run: |
           node --check .agents/skills/init/scaffold.mjs
           node --check .agents/skills/init/templates/scripts/audit-context.mjs
+      - name: 体检仓库根
+        run: node .agents/skills/init/templates/scripts/audit-context.mjs --root .
       - name: 冒烟测试
         run: node --test

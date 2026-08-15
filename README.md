@@ -93,7 +93,7 @@ tests/                                   框架脚本冒烟测试（node --test�
 README.md / LICENSE / .gitignore / .gitattributes
 ```
 
-> 注意：体检脚本的 ROOT 由脚本自身位置推导。在**框架仓库**里直接运行 `templates/scripts/audit-context.mjs`，检查的是 `templates/` 模板树（初始化前状态），不是仓库根；对项目运行请用脚手架生成的 `scripts/audit-context.mjs`。
+> 注意：体检脚本的 ROOT 由脚本自身位置推导。在**框架仓库**里直接运行 `templates/scripts/audit-context.mjs`，检查的是 `templates/` 模板树（初始化前状态），不是仓库根；要体检框架仓库根，用 `node .agents/skills/init/templates/scripts/audit-context.mjs --root .`。对项目运行请用脚手架生成的 `scripts/audit-context.mjs`。
 
 ## 设计取舍
 
