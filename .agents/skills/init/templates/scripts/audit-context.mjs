@@ -45,14 +45,9 @@ const ROOT = rootFlagIdx === -1
   : resolve(argv[rootFlagIdx + 1]);
 
 // AGENTS.md 每次对话都全量加载，字节上限是保持精简的自律标杆，超出就该往 docs/ 搬。
-// 行数是主尺，字节是备尺：行数只量根目录一份 AGENTS.md，字节量根目录所有 AGENTS 文件的
-// 合计，还能抓住"行数不多但每行很密"的写作。对稀疏的普通散文备尺就该沉默。
-// 真正要控的是 token 预算，字节是三种代理（行 / 字符 / 字节）里跨语言偏差最小的一种：
-// 中文约 3 字节/token、英文约 4 字节/token，差 30% 上下；字符数反而差 3~4 倍。
-// 17 KiB ≈ 4~6K token。标定面向 CJK 密集散文：要让 75% 警告不早于 150 行目标触发需
-// CAP ≥ 200×行密度，要让字节 error 不晚于 250 行硬上限需 CAP ≤ 250×行密度，本仓库实测
-// 行密度落在 70~85 字节/行，交集即 17 KiB。行密度随写作风格浮动，不要把它当常数反复调参
-// ——备尺对稀疏散文保持沉默是设计意图，不是需要修的死分支。
+// 行数是主尺（根目录一份 AGENTS.md），字节是备尺（根目录所有 AGENTS 文件合计），
+// 抓"行数不多但每行很密"的写作。17 KiB 的标定逻辑见 README「设计取舍」；
+// 备尺对稀疏散文保持沉默是设计意图，不是需要修的死分支。
 const AGENTS_BYTE_CAP = 17 * 1024;
 const AGENTS_BYTE_LABEL = `${AGENTS_BYTE_CAP / 1024} KiB`;
 const AGENTS_LINE_TARGET = 150;
@@ -135,22 +130,40 @@ if (!rootAgents) {
 // 把它们算进来会让计数永远归不了零。TODO(init) 现在是 warning 而非硬错误：
 // 完整初始化要求归零；轻量初始化会有意保留「轻量初始化未覆盖」的 TODO(init)，
 // 由 /ship-change 按需补齐——但必须一直出现在 warning 里，不能被忘记。
+// 轻量欠账单独计数：它和「完整初始化还没做完」是两种状态，混在一起会让真正的
+// TODO 永远被黄灯淹没，也让轻量档用户无法一眼看出欠账还剩多少。
 const isPlaceholderHost = (f) => {
   const r = rel(f);
   return r === "AGENTS.md" || r === "AGENTS.md.tmpl" || r.startsWith("docs/") || r.startsWith(".agents/evals/");
 };
 
 const markerRe = /TODO\(init\)/g;
+const liteMarkerRe = /TODO\(init\): 轻量初始化未覆盖/g;
 let markerTotal = 0;
+let liteMarkerTotal = 0;
 for (const f of mdFiles.filter(isPlaceholderHost)) {
-  const hits = (read(f).match(markerRe) || []).length;
+  const text = read(f);
+  const hits = (text.match(markerRe) || []).length;
+  const liteHits = (text.match(liteMarkerRe) || []).length;
   if (hits > 0) {
     markerTotal += hits;
-    warn(`TODO(init) 残留：${rel(f)}：${hits} 处`);
+    liteMarkerTotal += liteHits;
+    if (liteHits === hits) {
+      warn(`TODO(init) 轻量欠账：${rel(f)}：${hits} 处（由 /ship-change 按需补齐）`);
+    } else if (liteHits > 0) {
+      warn(`TODO(init) 残留：${rel(f)}：${hits} 处（其中轻量欠账 ${liteHits} 处）`);
+    } else {
+      warn(`TODO(init) 残留：${rel(f)}：${hits} 处`);
+    }
   }
 }
 if (markerTotal > 0) {
-  warn(`共 ${markerTotal} 处 TODO(init) 未填充（完整初始化应归零；轻量初始化可保留，由 /ship-change 按需补齐）`);
+  if (liteMarkerTotal === markerTotal) {
+    warn(`共 ${markerTotal} 处 TODO(init) 为轻量初始化欠账（由 /ship-change 按需补齐）`);
+  } else {
+    const liteNote = liteMarkerTotal > 0 ? `；其中轻量欠账 ${liteMarkerTotal} 处，由 /ship-change 按需补齐` : "";
+    warn(`共 ${markerTotal} 处 TODO(init) 未填充（完整初始化应归零${liteNote}）`);
+  }
 }
 
 // ------------------------------------------------------------------ 链接有效性

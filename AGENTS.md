@@ -26,7 +26,7 @@ node --test
 
 前三条合起来就是 `.github/workflows/ci.yml` 的全部内容，没有额外的全量档。
 
-体检脚本本身已被 `node --test` 覆盖，手动跑只是为了看输出。不带 `--root` 时 ROOT 由脚本自身位置推导，所以检查的是 `templates/` 子树而不是仓库根；`--root .` 才会体检本仓库根。模板树的合格状态是「0 error、若干占位符 warning」——占位符是 warning 不是 error。仓库根体检的「缺少 docs/learning-inbox.md」warning 是预期：根目录按铁律 4 不补 docs/，学习闭环只存在于 `templates/` 生成的用户项目里。
+体检脚本本身已被 `node --test` 覆盖，手动跑只是为了看输出。不带 `--root` 时 ROOT 由脚本自身位置推导，所以检查的是 `templates/` 子树而不是仓库根；`--root .` 才会体检本仓库根。模板树的合格状态是「0 error、若干占位符 warning」——占位符是 warning 不是 error。仓库根体检的「缺少 docs/learning-inbox.md」warning 是预期：根目录按铁律 4 不补 docs/，学习闭环只存在于 `templates/` 生成的用户项目里。因此 `/ship-change` 第 7 步在本仓库没有收件箱可写：蒸馏信号直接并入本文件或 README，不要创建 `docs/`。
 
 ## 目录地图
 
@@ -60,7 +60,7 @@ README.md                对外说明书，带 FRAMEWORK-README 标记（初始�
 
 | 术语 | 含义 | 代码中的名字 |
 | --- | --- | --- |
-| 骨架 | scaffold 生成到用户项目根的那 12 个文件 | `SKELETON_FILES`（测试里断言其中 11 个） |
+| 骨架 | scaffold 生成到用户项目根的那 12 个文件 | `SKELETON_FILES`（测试里断言其中 12 个） |
 | 模板树 | `.agents/skills/init/templates/` 及其全部内容 | `TEMPLATES` |
 | 宿主 | 加载技能的 agent 运行时（DSH 正式支持，Codex 未验证） | — |
 | 主尺 / 备尺 | `AGENTS.md` 的行数门禁 / 字节门禁，备尺对稀疏散文沉默是设计意图 | `AGENTS_LINE_TARGET` / `AGENTS_BYTE_CAP` |
@@ -84,7 +84,7 @@ README.md                对外说明书，带 FRAMEWORK-README 标记（初始�
 | --- | --- |
 | 用户项目的初始化访谈（**勿在本仓库运行**） | `/init` |
 | 产品契约访谈，被 init 阶段 2 调用 | `/product-design` |
-| 交付一次改动的标准流程，本仓库自己也照它走 | `/ship-change` |
+| 交付一次改动的标准流程；本仓库照走第 1–6 步，第 7 步无收件箱，蒸馏直接并入本文件或 README | `/ship-change` |
 | 做了有取舍的技术决策 | `/record-decision` |
 | 体检并更新上下文文件 | `/maintain-context` |
 

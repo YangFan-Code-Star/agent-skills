@@ -27,7 +27,7 @@ node scripts/audit-context.mjs
 
 脚本查的是机械问题：`AGENTS.md` 行数与字节数、文档链接是否有效、技能 frontmatter 是否完整、`TODO(init)` 残留、上下文文件与代码的更新时间差、敏感文件是否被忽略、学习收件箱是积压还是长期闲置。
 
-**先把 error 全部修掉，warning 逐条判断。** 其中 `TODO(init)` 是欠账：完整初始化应归零；轻量初始化留下的、带「轻量初始化未覆盖」的 `TODO(init)` 可以保留，由 `/ship-change` 按需补齐——但必须让它一直出现在 warning 里，不能被忘记。
+**先把 error 全部修掉，warning 逐条判断。** 其中 `TODO(init)` 是欠账：完整初始化应归零；轻量初始化留下的、带「轻量初始化未覆盖」的 `TODO(init)` 可以保留，由 `/ship-change` 按需补齐——体检会把轻量欠账单独计数，但它同样必须一直出现在 warning 里，不能被忘记。
 
 ### 2. 合并学习收件箱
 

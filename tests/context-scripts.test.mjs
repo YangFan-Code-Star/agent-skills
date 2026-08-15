@@ -1,9 +1,10 @@
 // scaffold.mjs 与 audit-context.mjs 的冒烟测试。零依赖：node:test + child_process。
 // 运行：node --test（或 node --test tests/context-scripts.test.mjs）
-// 覆盖：骨架生成与幂等、.tmpl 后缀剥离、--dry-run、--update-framework 的覆盖边界、
-//       符号链接边界（含 --root 本身为符号链接）、参数校验、--help、
-//       audit 在初始化前 / 装完技能后的状态、时效性检查用 git 提交时间而非 mtime、
-//       孤儿文档检查递归 docs/ 子目录、框架仓库自身的体检目标。
+// 覆盖：骨架生成与幂等、.tmpl 后缀剥离、.gitignore 两处同步、--dry-run、
+//       --update-framework 的覆盖边界、符号链接边界（含 --root 本身为符号链接）、
+//       参数校验、--help、audit 在初始化前 / 装完技能后的状态、轻量欠账单独计数、
+//       时效性检查用 git 提交时间而非 mtime、孤儿文档检查递归 docs/ 子目录、
+//       框架仓库自身的体检目标。
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -40,6 +41,7 @@ const SKELETON_FILES = [
   "docs/troubleshooting.md",
   "docs/learning-inbox.md",
   "docs/decisions/template.md",
+  "docs/decisions/0001-record-architecture-decisions.md",
   ".agents/evals/behavior-cases.md",
 ];
 
@@ -111,6 +113,12 @@ test("模板里的 AGENTS.md.tmpl 落到项目根时剥掉后缀，项目里不�
     assert.equal(existsSync(join(REPO, ".agents", "skills", "init", "templates", "AGENTS.md")), false);
     assert.ok(existsSync(join(REPO, ".agents", "skills", "init", "templates", "AGENTS.md.tmpl")));
   }));
+
+test("根目录与模板树的 .gitignore 保持一致（避免两处漂移）", () => {
+  const rootGitignore = readFileSync(join(REPO, ".gitignore"), "utf8");
+  const templateGitignore = readFileSync(join(REPO, ".agents", "skills", "init", "templates", ".gitignore"), "utf8");
+  assert.equal(templateGitignore, rootGitignore, "改了根目录的 .gitignore 就同步改模板那份，或说明为何允许差异");
+});
 
 test("GitHub Template 主路径：框架 AGENTS.md 在双标记命中时被受控替换", () =>
   withDir((dir) => {
@@ -303,6 +311,29 @@ test("audit 在未初始化的项目上无 error、TODO 报 warning、退出 0",
     assert.match(r.stdout, /0 个 error/);
     assert.match(r.stdout, /TODO\(init\) 残留/);
     assert.match(r.stdout, /共 \d+ 处 TODO\(init\) 未填充/);
+  }));
+
+test("轻量初始化欠账单独计数，与完整初始化 TODO 区分", () =>
+  withDir((dir) => {
+    scaffoldProject(dir);
+    const hosts = [
+      join(dir, "AGENTS.md"),
+      join(dir, "docs", "goals.md"),
+      join(dir, "docs", "architecture.md"),
+      join(dir, "docs", "glossary.md"),
+      join(dir, "docs", "roadmap.md"),
+      join(dir, "docs", "troubleshooting.md"),
+      join(dir, "docs", "decisions", "template.md"),
+      join(dir, "docs", "decisions", "0001-record-architecture-decisions.md"),
+      join(dir, ".agents", "evals", "behavior-cases.md"),
+    ];
+    for (const f of hosts) {
+      if (existsSync(f)) writeFileSync(f, readFileSync(f, "utf8").replace(/TODO\(init\)/g, "TODO(init): 轻量初始化未覆盖"));
+    }
+    const r = node([join(dir, "scripts", "audit-context.mjs")], { cwd: dir });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /TODO\(init\) 轻量欠账：AGENTS\.md：\d+ 处/);
+    assert.match(r.stdout, /共 \d+ 处 TODO\(init\) 为轻量初始化欠账（由 \/ship-change 按需补齐）/);
   }));
 
 test("audit 在装好全部技能的项目上只有 TODO warning（技能内相对链接有效）", () =>
