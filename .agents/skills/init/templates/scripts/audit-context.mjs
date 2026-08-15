@@ -4,20 +4,25 @@
 // 用法：node scripts/audit-context.mjs
 
 import { readFileSync, statSync, readdirSync, existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join, dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+
+// 生成物带版本号：scaffold 原样复制本文件，项目里的这一份不会随框架自动更新。
+// 想升级：node <技能目录>/scaffold.mjs --update-framework
+const CONTEXT_DEV_VERSION = "0.2.0";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 // AGENTS.md 每次对话都全量加载，字节上限是保持精简的自律标杆，超出就该往 docs/ 搬。
 // 行数是主尺，字节是备尺：行数只量根目录一份 AGENTS.md，字节量根目录所有 AGENTS 文件的
-// 合计，还能抓住"行数不多但每行很密"的写作。对稀疏的普通散文备尺就该沉默——行数足够当代理。
-// 标定：仓库实测中文散文密度约 47–85 字节/行（空模板 60，README/init SKILL 84，加权 69）。
-// 要让字节 75% 警告不早于 150 行目标触发需 CAP ≥ 200×密度，要让字节 error 不晚于 250 行
-// 上限需 CAP ≤ 250×密度；两档在 70–85 密度带取交集 ≈ 17 KiB（密度 70：警告 ~187 行、
-// error ~249 行，卡在 250 前；密度 85：154/206 行，字节先收口；密度 60：218/290 行，
-// 字节休眠、行数收口）。取 12 KiB 会让警告在 150 行目标之前就响、行数 error 永远轮不到，
-// 只是把 32 KiB 的"死分支"换了个方向复发。
+// 合计，还能抓住"行数不多但每行很密"的写作。对稀疏的普通散文备尺就该沉默。
+// 真正要控的是 token 预算，字节是三种代理（行 / 字符 / 字节）里跨语言偏差最小的一种：
+// 中文约 3 字节/token、英文约 4 字节/token，差 30% 上下；字符数反而差 3~4 倍。
+// 17 KiB ≈ 4~6K token。标定面向 CJK 密集散文：要让 75% 警告不早于 150 行目标触发需
+// CAP ≥ 200×行密度，要让字节 error 不晚于 250 行硬上限需 CAP ≤ 250×行密度，本仓库实测
+// 行密度落在 70~85 字节/行，交集即 17 KiB。行密度随写作风格浮动，不要把它当常数反复调参
+// ——备尺对稀疏散文保持沉默是设计意图，不是需要修的死分支。
 const AGENTS_BYTE_CAP = 17 * 1024;
 const AGENTS_BYTE_LABEL = `${AGENTS_BYTE_CAP / 1024} KiB`;
 const AGENTS_LINE_TARGET = 150;
@@ -27,11 +32,16 @@ const STALE_DAYS = 60;
 const SKIP_DIRS = new Set([
   ".git", "node_modules", "dist", "build", "out", "coverage",
   ".next", ".venv", "venv", "__pycache__", ".pytest_cache", "target", "vendor",
-  "templates",
 ]);
 
 // Windows 上的编辑器和 PowerShell 常写出带 BOM 的 UTF-8，不剥掉会让 ^--- 匹配不上 frontmatter
 const read = (p) => readFileSync(p, "utf8").replace(/^\uFEFF/, "");
+
+// 技能自带的 templates/ 里，AGENTS.md 以 .tmpl 后缀存放（宿主会递归注入所有 AGENTS.md，
+// 模板那份满是 TODO(init)，不能让它污染真实项目）。体检要把它当 markdown / 当 AGENTS 看待，
+// 否则以 templates/ 为根自检时会误报"根目录缺少 AGENTS.md"。
+const isMarkdown = (f) => f.endsWith(".md") || f.endsWith(".md.tmpl");
+const AGENTS_RE = /(^|[\\/])AGENTS(\.override)?\.md(\.tmpl)?$/;
 
 const errors = [];
 const warnings = [];
@@ -60,16 +70,17 @@ function walk(dir, out = []) {
 }
 
 const allFiles = walk(ROOT);
-const mdFiles = allFiles.filter((f) => f.endsWith(".md"));
+const mdFiles = allFiles.filter(isMarkdown);
 
 // ---------------------------------------------------------------- AGENTS.md
 
-const agentsFiles = allFiles.filter((f) => /(^|[\\/])AGENTS(\.override)?\.md$/.test(f));
+const agentsFiles = allFiles.filter((f) => AGENTS_RE.test(f));
+const rootAgents = agentsFiles.find((f) => rel(f) === "AGENTS.md" || rel(f) === "AGENTS.md.tmpl");
 
-if (!agentsFiles.some((f) => rel(f) === "AGENTS.md")) {
+if (!rootAgents) {
   err("根目录缺少 AGENTS.md，宿主将没有任何项目级指令");
 } else {
-  const root = join(ROOT, "AGENTS.md");
+  const root = rootAgents;
   const text = read(root);
   const lines = text.split(/\r?\n/).length;
   if (lines > 250) err(`AGENTS.md ${lines} 行，严重超标（目标 ${AGENTS_LINE_TARGET} 行），必须往 docs/ 搬`);
@@ -95,7 +106,7 @@ if (!agentsFiles.some((f) => rel(f) === "AGENTS.md")) {
 // 把它们算进来会让计数永远归不了零，从而毁掉「零占位符 = 初始化完成」这个信号。
 const isPlaceholderHost = (f) => {
   const r = rel(f);
-  return r === "AGENTS.md" || r.startsWith("docs/") || r.startsWith(".agents/evals/");
+  return r === "AGENTS.md" || r === "AGENTS.md.tmpl" || r.startsWith("docs/") || r.startsWith(".agents/evals/");
 };
 
 const markerRe = /TODO\(init\)/g;
@@ -209,20 +220,63 @@ if (!existsSync(gitignorePath)) {
 
 // ------------------------------------------------------------------ 文档时效性
 
+// 时间基准用 git 提交时间，不用 mtime：git 不保存 mtime，克隆 / CI / 换机器之后所有文件的
+// mtime 都是同一个 checkout 时间，两个时效性检查会永久静默通过——正是本框架最忌讳的
+// "安静地说谎"，还偏偏发生在专门抓它的检查里。没有 git、文件未跟踪或有未提交改动时才回退
+// 到 mtime（未提交的写入 git log 看不见，纯 git 会把刚转过的闭环误报成"从没转"）。
+const gitOut = (args) => {
+  try {
+    return execFileSync("git", args, { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return null;
+  }
+};
+const HAS_GIT = gitOut(["rev-parse", "--is-inside-work-tree"]) === "true";
+
+const mtimeOf = (p) => statSync(p).mtimeMs;
+
+// tracked & clean → 提交时间；dirty / untracked / 无 git → mtime。
+function lastChangeMs(p) {
+  if (!HAS_GIT) return mtimeOf(p);
+  const spec = rel(p);
+  const dirty = gitOut(["status", "--porcelain", "--", spec]);
+  if (dirty === null || dirty !== "") return mtimeOf(p);
+  const ts = gitOut(["log", "-1", "--format=%ct", "--", spec]);
+  return ts ? Number(ts) * 1000 : mtimeOf(p);
+}
+
 // AGENTS.md 与 AGENTS.override.md 都属于上下文；子目录里的 override 也应算，别当成代码文件
 const isContext = (f) => {
   const r = rel(f);
-  return /(^|[\\/])AGENTS(\.override)?\.md$/.test(r) || r.startsWith("docs/") || r.startsWith(".agents/");
+  return AGENTS_RE.test(r) || r.startsWith("docs/") || r.startsWith(".agents/");
 };
-const codeFiles = allFiles.filter((f) => !isContext(f) && !rel(f).startsWith("scripts/"));
-const newestCode = codeFiles.length > 0
-  ? codeFiles.reduce((a, b) => (statSync(a).mtimeMs > statSync(b).mtimeMs ? a : b))
-  : null;
+const CONTEXT_EXCLUDES = ["AGENTS.md", "AGENTS.md.tmpl", "AGENTS.override.md", "docs", ".agents", "scripts"];
 
-if (newestCode && existsSync(join(ROOT, "AGENTS.md"))) {
-  const gapDays = (statSync(newestCode).mtimeMs - statSync(join(ROOT, "AGENTS.md")).mtimeMs) / 86_400_000;
+// 「最近改动的代码文件」用一次 git 调用拿到，避免对每个文件各起一个子进程。
+function newestCodeByGit() {
+  const out = gitOut([
+    "log", "-1", "--format=%ct", "--name-only",
+    "--", ".", ...CONTEXT_EXCLUDES.map((p) => `:(exclude)${p}`),
+  ]);
+  if (!out) return null;
+  const [head, ...rest] = out.split(/\r?\n/).filter(Boolean);
+  const path = rest[0];
+  if (!path) return null;
+  return { ms: Number(head) * 1000, label: path };
+}
+
+const codeFiles = allFiles.filter((f) => !isContext(f) && !rel(f).startsWith("scripts/"));
+const newestCodeByMtime = codeFiles.length > 0
+  ? codeFiles.reduce((a, b) => (mtimeOf(a) > mtimeOf(b) ? a : b))
+  : null;
+const newestCode = HAS_GIT
+  ? newestCodeByGit()
+  : (newestCodeByMtime && { ms: mtimeOf(newestCodeByMtime), label: rel(newestCodeByMtime) });
+
+if (newestCode && rootAgents) {
+  const gapDays = (newestCode.ms - lastChangeMs(rootAgents)) / 86_400_000;
   if (gapDays > STALE_DAYS) {
-    warn(`代码比 AGENTS.md 新 ${Math.round(gapDays)} 天（最近改动：${rel(newestCode)}），走一遍 /maintain-context`);
+    warn(`代码比 AGENTS.md 新 ${Math.round(gapDays)} 天（最近改动：${newestCode.label}），走一遍 /maintain-context`);
   }
 }
 
@@ -245,11 +299,20 @@ if (existsSync(docsDir)) {
       linkedTargets.add(resolve(dirname(f), decoded));
     }
   }
-  const topDocs = readdirSync(docsDir, { withFileTypes: true })
-    .filter((e) => e.isFile() && e.name.endsWith(".md"))
-    .map((e) => join(docsDir, e.name));
-  for (const d of topDocs) {
-    if (!linkedTargets.has(d)) {
+  // 子目录也要查——ADR「只增不改、越攒越多」，最容易变成没人链接得到的孤儿。
+  // 但可达性判定到目录为止：链接到 `docs/decisions/` 就等于宣告了整个目录，里面每份 ADR
+  // 不必各有一条链接。这样脚手架自带的两份种子（template.md、0001-*.md）天然不算孤儿，
+  // 不需要在检查里硬编码文件名放行，而 `docs/notes/` 这类没人提过的目录仍会被抓出来。
+  const docsMd = mdFiles.filter((f) => rel(f).startsWith("docs/"));
+  for (const d of docsMd) {
+    if (linkedTargets.has(d)) continue;
+    let dir = dirname(d);
+    let reachable = false;
+    while (dir !== docsDir && dir.startsWith(docsDir)) {
+      if (linkedTargets.has(dir)) { reachable = true; break; }
+      dir = dirname(dir);
+    }
+    if (!reachable) {
       warn(`${rel(d)} 没有被任何文档链接到，agent 不会知道它存在——在 AGENTS.md 的文档地图里加一行`);
     }
   }
@@ -270,9 +333,9 @@ if (!existsSync(inboxPath)) {
     else notes.push(`学习收件箱有 ${inboxEntries} 条待合并候选，跑 /maintain-context`);
   } else if (newestCode) {
     // 空收件箱有两种含义：刚合并完（健康），或蒸馏环节从没执行过（闭环没转）。这两种在输出里
-    // 长得一样，就是这个框架最讨厌的"安静地说谎"。收件箱的 mtime 恰好是闭环最后一次转动的时间
-    // ——写入和清空都会更新它——所以不需要额外的状态文件就能把两种含义分开。
-    const idleDays = (statSync(newestCode).mtimeMs - statSync(inboxPath).mtimeMs) / 86_400_000;
+    // 长得一样，就是这个框架最讨厌的"安静地说谎"。收件箱最后一次变动的时间恰好是闭环最后一次
+    // 转动的时间——写入和清空都会更新它——所以不需要额外的状态文件就能把两种含义分开。
+    const idleDays = (newestCode.ms - lastChangeMs(inboxPath)) / 86_400_000;
     if (idleDays > STALE_DAYS) {
       warn(`代码比学习收件箱新 ${Math.round(idleDays)} 天且收件箱是空的，/ship-change 的复盘蒸馏可能一直被跳过`);
     }
@@ -281,9 +344,9 @@ if (!existsSync(inboxPath)) {
 
 // AGENTS.md 里用 `/某技能` 或 `$某技能` 引用了技能，但技能目录不存在。
 // 只认反引号包起来的 `$名` / `/名`，避免把 `docs/roadmap.md` 这类路径误判成技能名。
-if (existsSync(join(ROOT, "AGENTS.md"))) {
+if (rootAgents) {
   const referenced = new Set(
-    [...stripFences(read(join(ROOT, "AGENTS.md"))).matchAll(/`[/$]([a-z][a-z0-9-]{2,})`/g)].map((m) => m[1])
+    [...stripFences(read(rootAgents)).matchAll(/`[/$]([a-z][a-z0-9-]{2,})`/g)].map((m) => m[1])
   );
   // 技能目录不存在时（技能可能装在宿主的全局技能目录），不按引用逐条报 error——缺目录已由上面的 warning 覆盖；
   // 目录存在才严格判定引用齐全，此时缺技能才是真实的安装不完整。
@@ -311,7 +374,7 @@ const section = (title, items) => {
   for (const i of items) console.log(`  - ${i}`);
 };
 
-console.log("上下文文件体检");
+console.log(`上下文文件体检（context-dev v${CONTEXT_DEV_VERSION}）`);
 console.log("=".repeat(40));
 
 section(`ERROR (${errors.length})  必须修`, errors);

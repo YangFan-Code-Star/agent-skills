@@ -1,7 +1,9 @@
 // scaffold.mjs 与 audit-context.mjs 的冒烟测试。零依赖：node:test + child_process。
 // 运行：node --test（或 node --test tests/context-scripts.test.mjs）
-// 覆盖：骨架生成与幂等、--dry-run、符号链接边界（含 --root 本身为符号链接）、
-//       参数校验、--help、audit 在初始化前 / 装完技能后的状态、框架仓库自身的体检目标。
+// 覆盖：骨架生成与幂等、.tmpl 后缀剥离、--dry-run、--update-framework 的覆盖边界、
+//       符号链接边界（含 --root 本身为符号链接）、参数校验、--help、
+//       audit 在初始化前 / 装完技能后的状态、时效性检查用 git 提交时间而非 mtime、
+//       孤儿文档检查递归 docs/ 子目录、框架仓库自身的体检目标。
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -12,8 +14,10 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   rmSync,
   symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
@@ -56,6 +60,18 @@ const scaffoldProject = (dir) => {
   return r;
 };
 
+// 以指定日期提交，用来构造"git 提交时间差很大、但 mtime 全都一样"的场景
+const commitAt = (dir, isoDate, message) => {
+  git(["add", "-A"], { cwd: dir });
+  const r = git(
+    ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", message],
+    { cwd: dir, env: { ...process.env, GIT_AUTHOR_DATE: isoDate, GIT_COMMITTER_DATE: isoDate } },
+  );
+  assert.equal(r.status, 0, r.stderr);
+};
+
+const auditIn = (dir) => node([join(dir, "scripts", "audit-context.mjs")], { cwd: dir });
+
 test("scaffold 在空 git 仓库生成完整骨架，重跑幂等，且能自动定位项目根", () =>
   withDir((dir) => {
     const first = scaffoldProject(dir);
@@ -73,6 +89,45 @@ test("scaffold 在空 git 仓库生成完整骨架，重跑幂等，且能自动
     assert.equal(second.status, 0, second.stderr);
     assert.match(second.stdout, /新建 0 个文件/);
     assert.match(second.stdout, /跳过 12 个已存在文件/);
+  }));
+
+test("模板里的 AGENTS.md.tmpl 落到项目根时剥掉后缀，项目里不残留 .tmpl", () =>
+  withDir((dir) => {
+    scaffoldProject(dir);
+    assert.ok(existsSync(join(dir, "AGENTS.md")));
+    assert.equal(existsSync(join(dir, "AGENTS.md.tmpl")), false);
+    // 宿主递归发现 AGENTS.md，模板那份必须在框架仓库里带后缀存放，不能被注入
+    assert.equal(existsSync(join(REPO, ".agents", "skills", "init", "templates", "AGENTS.md")), false);
+    assert.ok(existsSync(join(REPO, ".agents", "skills", "init", "templates", "AGENTS.md.tmpl")));
+  }));
+
+test("--update-framework 覆盖 scripts/，但不动用户内容（AGENTS.md、evals、docs）", () =>
+  withDir((dir) => {
+    scaffoldProject(dir);
+    const audit = join(dir, "scripts", "audit-context.mjs");
+    const agents = join(dir, "AGENTS.md");
+    const evals = join(dir, ".agents", "evals", "behavior-cases.md");
+    for (const f of [audit, agents, evals]) writeFileSync(f, "用户改过的内容\n");
+
+    const r = node([SCAFFOLD, "--root", dir, "--update-framework"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /已升级 1 个框架文件/);
+    assert.match(r.stdout, /\^ scripts[/\\]audit-context\.mjs/);
+
+    assert.notEqual(readFileSync(audit, "utf8"), "用户改过的内容\n");
+    // init 阶段 3 会把用户访谈得到的红线逐条写进 behavior-cases.md，覆盖它等于删用户内容
+    assert.equal(readFileSync(evals, "utf8"), "用户改过的内容\n");
+    assert.equal(readFileSync(agents, "utf8"), "用户改过的内容\n");
+  }));
+
+test("不带 --update-framework 时，已存在的 scripts/ 不被覆盖", () =>
+  withDir((dir) => {
+    scaffoldProject(dir);
+    const audit = join(dir, "scripts", "audit-context.mjs");
+    writeFileSync(audit, "用户改过的内容\n");
+    const r = node([SCAFFOLD, "--root", dir]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(readFileSync(audit, "utf8"), "用户改过的内容\n");
   }));
 
 test("--dry-run 只预览不写入", () =>
@@ -175,6 +230,62 @@ test("audit 在装好全部技能的项目上 0 error 0 warning（技能内相�
     const r = node([join(dir, "scripts", "audit-context.mjs")], { cwd: dir });
     assert.equal(r.status, 1); // 仍是初始化前（有占位符）
     assert.match(r.stdout, /结论：0 个 error、0 个 warning/);
+  }));
+
+// git 不保存 mtime，克隆后所有文件的 mtime 都是同一个 checkout 时间。下面两条构造的正是
+// 那个场景：文件全是刚写出来的（mtime 相同），只有提交时间相差很远。若检查退回 mtime，
+// 两条都会静默通过——那是这个框架最忌讳的"安静地说谎"。
+test("时效性检查读 git 提交时间：mtime 全相同也能发现代码比 AGENTS.md 新", () =>
+  withDir((dir) => {
+    scaffoldProject(dir);
+    commitAt(dir, "2024-01-01T00:00:00+0000", "骨架");
+    writeFileSync(join(dir, "main.js"), "console.log(1);\n");
+    commitAt(dir, "2024-09-01T00:00:00+0000", "代码");
+
+    const r = auditIn(dir);
+    assert.match(r.stdout, /代码比 AGENTS\.md 新 \d+ 天（最近改动：main\.js）/);
+    assert.match(r.stdout, /代码比学习收件箱新 \d+ 天且收件箱是空的/);
+  }));
+
+test("上下文与代码同期提交时不误报过期", () =>
+  withDir((dir) => {
+    scaffoldProject(dir);
+    writeFileSync(join(dir, "main.js"), "console.log(1);\n");
+    commitAt(dir, "2024-09-01T00:00:00+0000", "骨架与代码");
+
+    const r = auditIn(dir);
+    assert.doesNotMatch(r.stdout, /代码比 AGENTS\.md 新/);
+    assert.doesNotMatch(r.stdout, /代码比学习收件箱新/);
+  }));
+
+test("收件箱有未提交改动时按 mtime 判定，不把刚转过的闭环误报成从没转", () =>
+  withDir((dir) => {
+    scaffoldProject(dir);
+    commitAt(dir, "2024-01-01T00:00:00+0000", "骨架");
+    writeFileSync(join(dir, "main.js"), "console.log(1);\n");
+    commitAt(dir, "2024-09-01T00:00:00+0000", "代码");
+    // 蒸馏刚写进收件箱、还没提交：git log 看不见这次写入，必须回退到 mtime
+    writeFileSync(
+      join(dir, "docs", "learning-inbox.md"),
+      "# 学习收件箱\n\n## 待合并\n\n### 2024-09-02 纠正 — 示例\n",
+    );
+
+    const r = auditIn(dir);
+    assert.doesNotMatch(r.stdout, /代码比学习收件箱新/);
+    assert.match(r.stdout, /学习收件箱有 1 条待合并候选/);
+  }));
+
+test("孤儿文档检查递归 docs/ 子目录，但链接到目录即视为可达", () =>
+  withDir((dir) => {
+    scaffoldProject(dir);
+    // 脚手架自带的 ADR 种子靠 AGENTS.md 里的 `docs/decisions/` 目录链接可达，不算孤儿
+    writeFileSync(join(dir, "docs", "decisions", "0002-example.md"), "# 示例决策\n");
+    mkdirSync(join(dir, "docs", "notes"));
+    writeFileSync(join(dir, "docs", "notes", "scratch.md"), "# 随手记\n");
+
+    const r = auditIn(dir);
+    assert.doesNotMatch(r.stdout, /decisions[/\\]0002-example\.md 没有被任何文档链接到/);
+    assert.match(r.stdout, /docs\/notes\/scratch\.md 没有被任何文档链接到/);
   }));
 
 test("框架仓库自身的体检目标（templates 树）是合法的初始化前状态", () => {
