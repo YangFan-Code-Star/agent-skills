@@ -10,9 +10,15 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 // AGENTS.md 每次对话都全量加载，字节上限是保持精简的自律标杆，超出就该往 docs/ 搬。
-// 取值与 250 行的硬上限同量级：中文约每行 50 字节，250 行≈12.5 KiB。定得更高（如 32 KiB）
-// 时行数上限总会先触发，字节门禁就成了永不执行的死分支。
-const AGENTS_BYTE_CAP = 12 * 1024;
+// 行数是主尺，字节是备尺：行数只量根目录一份 AGENTS.md，字节量根目录所有 AGENTS 文件的
+// 合计，还能抓住"行数不多但每行很密"的写作。对稀疏的普通散文备尺就该沉默——行数足够当代理。
+// 标定：仓库实测中文散文密度约 47–85 字节/行（空模板 60，README/init SKILL 84，加权 69）。
+// 要让字节 75% 警告不早于 150 行目标触发需 CAP ≥ 200×密度，要让字节 error 不晚于 250 行
+// 上限需 CAP ≤ 250×密度；两档在 70–85 密度带取交集 ≈ 17 KiB（密度 70：警告 ~187 行、
+// error ~249 行，卡在 250 前；密度 85：154/206 行，字节先收口；密度 60：218/290 行，
+// 字节休眠、行数收口）。取 12 KiB 会让警告在 150 行目标之前就响、行数 error 永远轮不到，
+// 只是把 32 KiB 的"死分支"换了个方向复发。
+const AGENTS_BYTE_CAP = 17 * 1024;
 const AGENTS_BYTE_LABEL = `${AGENTS_BYTE_CAP / 1024} KiB`;
 const AGENTS_LINE_TARGET = 150;
 const SKILL_BODY_LINE_CAP = 500;

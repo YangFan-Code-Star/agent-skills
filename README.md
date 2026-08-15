@@ -69,7 +69,7 @@ Codex 目前只验证了五个 Skill 的安装、frontmatter 与脚本机械检�
     scaffold.mjs                         把 templates/ 生成到项目根
     references/                          访谈题库与落盘映射
     templates/                           项目骨架模板（被 scaffold 到项目根）
-      AGENTS.md                          工作手册模板（目标 150 行内 / 12 KiB 自律上限）
+      AGENTS.md                          工作手册模板（目标 150 行内 / 17 KiB 自律上限）
       docs/                              知识库：goals / architecture / glossary / roadmap / troubleshooting / decisions
       docs/learning-inbox.md             复盘蒸馏收件箱（队列）
       scripts/audit-context.mjs          确定性体检脚本
