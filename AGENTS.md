@@ -1,8 +1,10 @@
+<!-- FRAMEWORK-AGENTS: context-dev 框架仓库维护者手册。GitHub Template 复制后由 scaffold 在「同时命中 README 的 FRAMEWORK-README 标记」时受控替换为项目手册；用户自己的 AGENTS.md 不含本标记，绝不覆盖。 -->
+
 # context-dev — Agent 工作手册
 
 **这是框架本身的仓库，不是用它初始化出来的项目。** `.agents/skills/` 是**产品**——五个要被安装到别人项目里的技能；`templates/` 下的一切是**产出物**，是别人项目的起点。把它们当成本仓库的配置来改，是这里最容易犯、也最贵的错。
 
-本文件不会被 `scaffold.mjs` 复制到任何地方（它只复制 `templates/`），改它只影响在本仓库里干活的 agent。
+本文件不会被 `scaffold.mjs` 复制到任何地方（它只复制 `templates/`）；但 GitHub Template 会把它复制进新仓库，此时 `scaffold.mjs` 会识别上面的 `FRAMEWORK-AGENTS` 标记并在 README 仍带 `FRAMEWORK-README` 标记时受控替换。改它只影响在本仓库里干活的 agent。
 
 ## 快速上手
 
@@ -87,7 +89,7 @@ README.md                对外说明书，带 FRAMEWORK-README 标记（初始�
 
 ## 当前状态
 
-v0.2.0（`CONTEXT_DEV_VERSION` 在 `scaffold.mjs` 与 `templates/scripts/audit-context.mjs` **各有一份，改版本号要两处一起改**）。五个技能齐全，DSH 正式支持，Codex 只验证了安装与 frontmatter。
+v0.3.0（`CONTEXT_DEV_VERSION` 在 `scaffold.mjs` 与 `templates/scripts/audit-context.mjs` **各有一份，改版本号要两处一起改**）。五个技能齐全，DSH 正式支持，Codex 只验证了安装与 frontmatter。
 
 本仓库没有 `docs/roadmap.md`，范围没有文件级的唯一来源——**新增能力前先在对话里把范围对齐**，别默认「顺手加上更好」。
 

@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 // 生成物带版本号：scaffold 原样复制本文件，项目里的这一份不会随框架自动更新。
 // 想升级：node <技能目录>/scaffold.mjs --update-framework
-const CONTEXT_DEV_VERSION = "0.2.0";
+const CONTEXT_DEV_VERSION = "0.3.0";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -45,7 +45,6 @@ const AGENTS_RE = /(^|[\\/])AGENTS(\.override)?\.md(\.tmpl)?$/;
 
 const errors = [];
 const warnings = [];
-const pending = [];
 const notes = [];
 
 const err = (m) => errors.push(m);
@@ -103,7 +102,9 @@ if (!rootAgents) {
 // ------------------------------------------------------- TODO(init) 残留
 
 // 只扫真正会放占位符的地方。技能文档和 README 会大量「提到」这个标记本身，
-// 把它们算进来会让计数永远归不了零，从而毁掉「零占位符 = 初始化完成」这个信号。
+// 把它们算进来会让计数永远归不了零。TODO(init) 现在是 warning 而非硬错误：
+// 完整初始化要求归零；轻量初始化会有意保留「轻量初始化未覆盖」的 TODO(init)，
+// 由 /ship-change 按需补齐——但必须一直出现在 warning 里，不能被忘记。
 const isPlaceholderHost = (f) => {
   const r = rel(f);
   return r === "AGENTS.md" || r === "AGENTS.md.tmpl" || r.startsWith("docs/") || r.startsWith(".agents/evals/");
@@ -115,11 +116,11 @@ for (const f of mdFiles.filter(isPlaceholderHost)) {
   const hits = (read(f).match(markerRe) || []).length;
   if (hits > 0) {
     markerTotal += hits;
-    pending.push(`${rel(f)}：${hits} 处`);
+    warn(`TODO(init) 残留：${rel(f)}：${hits} 处`);
   }
 }
 if (markerTotal > 0) {
-  pending.unshift(`共 ${markerTotal} 处占位符未填充，运行 /init 继续访谈`);
+  warn(`共 ${markerTotal} 处 TODO(init) 未填充（完整初始化应归零；轻量初始化可保留，由 /ship-change 按需补齐）`);
 }
 
 // ------------------------------------------------------------------ 链接有效性
@@ -250,7 +251,9 @@ const isContext = (f) => {
   const r = rel(f);
   return AGENTS_RE.test(r) || r.startsWith("docs/") || r.startsWith(".agents/");
 };
-const CONTEXT_EXCLUDES = ["AGENTS.md", "AGENTS.md.tmpl", "AGENTS.override.md", "docs", ".agents", "scripts"];
+// scripts/ 不再整体排除：自动化脚本项目的业务代码常放在 scripts/ 里，整体排除会漏报。
+// 只排除框架自己复制过去的 audit-context.mjs——它的改动不能代表业务代码在演进。
+const CONTEXT_EXCLUDES = ["AGENTS.md", "AGENTS.md.tmpl", "AGENTS.override.md", "docs", ".agents", "scripts/audit-context.mjs"];
 
 // 「最近改动的代码文件」用一次 git 调用拿到，避免对每个文件各起一个子进程。
 function newestCodeByGit() {
@@ -265,13 +268,40 @@ function newestCodeByGit() {
   return { ms: Number(head) * 1000, label: path };
 }
 
-const codeFiles = allFiles.filter((f) => !isContext(f) && !rel(f).startsWith("scripts/"));
+const isCodeFile = (f) => !isContext(f) && rel(f) !== "scripts/audit-context.mjs";
+const codeFiles = allFiles.filter(isCodeFile);
+
+// 有 git 时，git log 只看得见已提交且干净的代码；dirty/untracked 的代码文件必须回退到
+// mtime，否则「旧 AGENTS + 未跟踪的新 main.js」会静默漏报——这又是专门抓说谎的检查在说谎。
+// 用一次 git status -uall 拿到所有 dirty/untracked 路径，避免对每个文件各起一个子进程。
+function newestDirtyCodeByMtime() {
+  const out = gitOut(["status", "--porcelain", "-uall"]);
+  if (!out) return null;
+  let newest = null;
+  for (const line of out.split(/\r?\n/).filter(Boolean)) {
+    const raw = line.slice(3).trim();
+    if (!raw || raw.endsWith("/")) continue;
+    const p = raw.replace(/^"(.*)"$/, "$1");
+    const abs = resolve(ROOT, p);
+    if (!existsSync(abs) || !isCodeFile(abs)) continue;
+    const ms = mtimeOf(abs);
+    if (!newest || ms > newest.ms) newest = { ms, label: rel(abs) };
+  }
+  return newest;
+}
+
 const newestCodeByMtime = codeFiles.length > 0
   ? codeFiles.reduce((a, b) => (mtimeOf(a) > mtimeOf(b) ? a : b))
   : null;
+const newestCodeByMtimeLabeled = newestCodeByMtime && { ms: mtimeOf(newestCodeByMtime), label: rel(newestCodeByMtime) };
+
+const newestGit = HAS_GIT ? newestCodeByGit() : null;
+const newestDirty = HAS_GIT ? newestDirtyCodeByMtime() : null;
 const newestCode = HAS_GIT
-  ? newestCodeByGit()
-  : (newestCodeByMtime && { ms: mtimeOf(newestCodeByMtime), label: rel(newestCodeByMtime) });
+  ? (newestGit && newestDirty
+      ? (newestGit.ms >= newestDirty.ms ? newestGit : newestDirty)
+      : (newestGit || newestDirty))
+  : newestCodeByMtimeLabeled;
 
 if (newestCode && rootAgents) {
   const gapDays = (newestCode.ms - lastChangeMs(rootAgents)) / 86_400_000;
@@ -379,18 +409,13 @@ console.log("=".repeat(40));
 
 section(`ERROR (${errors.length})  必须修`, errors);
 section(`WARN (${warnings.length})  逐条判断`, warnings);
-section(`TODO (${markerTotal})  等待 init 填充`, pending);
 section("INFO", notes);
 
 console.log(
-  `\n结论：${errors.length} 个 error、${warnings.length} 个 warning、${markerTotal} 处占位符。`
+  `\n结论：${errors.length} 个 error、${warnings.length} 个 warning。`
 );
 
 if (errors.length > 0) {
   console.log("先把 error 全部修掉，再逐条判断 warning。");
-  process.exit(1);
-}
-if (markerTotal > 0) {
-  console.log("模板尚未初始化完成，运行 /init 继续。");
   process.exit(1);
 }

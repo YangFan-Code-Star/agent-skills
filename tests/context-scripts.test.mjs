@@ -9,6 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+  copyFileSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -60,6 +61,16 @@ const scaffoldProject = (dir) => {
   return r;
 };
 
+// 模拟 GitHub Template：把仓库所有已跟踪文件复制到新目录，不带 .git 历史。
+const copyRepoTracked = (dest) => {
+  const files = git(["ls-files"], { cwd: REPO }).stdout.trim().split(/\r?\n/).filter(Boolean);
+  for (const f of files) {
+    const dst = join(dest, f);
+    mkdirSync(dirname(dst), { recursive: true });
+    copyFileSync(join(REPO, f), dst);
+  }
+};
+
 // 以指定日期提交，用来构造"git 提交时间差很大、但 mtime 全都一样"的场景
 const commitAt = (dir, isoDate, message) => {
   git(["add", "-A"], { cwd: dir });
@@ -99,6 +110,50 @@ test("模板里的 AGENTS.md.tmpl 落到项目根时剥掉后缀，项目里不�
     // 宿主递归发现 AGENTS.md，模板那份必须在框架仓库里带后缀存放，不能被注入
     assert.equal(existsSync(join(REPO, ".agents", "skills", "init", "templates", "AGENTS.md")), false);
     assert.ok(existsSync(join(REPO, ".agents", "skills", "init", "templates", "AGENTS.md.tmpl")));
+  }));
+
+test("GitHub Template 主路径：框架 AGENTS.md 在双标记命中时被受控替换", () =>
+  withDir((dir) => {
+    const project = join(dir, "project");
+    mkdirSync(project);
+    copyRepoTracked(project);
+    // 复制出来的是框架维护者手册，不能直接作为项目手册
+    assert.match(readFileSync(join(project, "AGENTS.md"), "utf8"), /这是框架本身的仓库/);
+
+    const r = node([SCAFFOLD, "--root", project]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /替换 1 个模板复制残留文件/);
+
+    const agents = readFileSync(join(project, "AGENTS.md"), "utf8");
+    assert.doesNotMatch(agents, /这是框架本身的仓库/);
+    assert.match(agents, /这个仓库还没初始化/);
+    assert.match(agents, /TODO\(init\): 项目名/);
+  }));
+
+test("用户自己的 AGENTS.md（无 FRAMEWORK-AGENTS 标记）绝不覆盖", () =>
+  withDir((dir) => {
+    const project = join(dir, "project");
+    mkdirSync(project);
+    copyRepoTracked(project);
+    writeFileSync(join(project, "AGENTS.md"), "# 用户自己的手册\n");
+
+    const r = node([SCAFFOLD, "--root", project]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(readFileSync(join(project, "AGENTS.md"), "utf8"), "# 用户自己的手册\n");
+    assert.match(r.stdout, /跳过 2 个已存在文件/); // AGENTS.md 与 .gitignore
+  }));
+
+test("框架 AGENTS.md 仅在 README 仍带 FRAMEWORK-README 标记时才替换", () =>
+  withDir((dir) => {
+    const project = join(dir, "project");
+    mkdirSync(project);
+    copyRepoTracked(project);
+    writeFileSync(join(project, "README.md"), "# 用户自己的 README\n");
+
+    const r = node([SCAFFOLD, "--root", project]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(readFileSync(join(project, "AGENTS.md"), "utf8"), /这是框架本身的仓库/);
+    assert.match(r.stdout, /跳过 2 个已存在文件/);
   }));
 
 test("--update-framework 覆盖 scripts/，但不动用户内容（AGENTS.md、evals、docs）", () =>
@@ -212,24 +267,26 @@ test("--help 显示用法并以 0 退出", () => {
   assert.match(r.stdout, /用法：node scaffold\.mjs/);
 });
 
-test("audit 在未初始化的项目上无 error、报占位符、退出 1", () =>
+test("audit 在未初始化的项目上无 error、TODO 报 warning、退出 0", () =>
   withDir((dir) => {
     scaffoldProject(dir);
     const r = node([join(dir, "scripts", "audit-context.mjs")], { cwd: dir });
-    assert.equal(r.status, 1);
+    assert.equal(r.status, 0); // TODO(init) 是 warning，不再是硬错误
     assert.match(r.stdout, /0 个 error/);
-    assert.match(r.stdout, /共 \d+ 处占位符未填充/);
+    assert.match(r.stdout, /TODO\(init\) 残留/);
+    assert.match(r.stdout, /共 \d+ 处 TODO\(init\) 未填充/);
   }));
 
-test("audit 在装好全部技能的项目上 0 error 0 warning（技能内相对链接有效）", () =>
+test("audit 在装好全部技能的项目上只有 TODO warning（技能内相对链接有效）", () =>
   withDir((dir) => {
     scaffoldProject(dir);
     for (const name of SKILL_NAMES) {
       cpSync(join(REPO, ".agents", "skills", name), join(dir, ".agents", "skills", name), { recursive: true });
     }
     const r = node([join(dir, "scripts", "audit-context.mjs")], { cwd: dir });
-    assert.equal(r.status, 1); // 仍是初始化前（有占位符）
-    assert.match(r.stdout, /结论：0 个 error、0 个 warning/);
+    assert.equal(r.status, 0); // 仍是初始化前：TODO 只作 warning
+    assert.match(r.stdout, /结论：0 个 error、\d+ 个 warning/);
+    assert.doesNotMatch(r.stdout, /链接指向不存在的路径/);
   }));
 
 // git 不保存 mtime，克隆后所有文件的 mtime 都是同一个 checkout 时间。下面两条构造的正是
@@ -245,6 +302,27 @@ test("时效性检查读 git 提交时间：mtime 全相同也能发现代码比
     const r = auditIn(dir);
     assert.match(r.stdout, /代码比 AGENTS\.md 新 \d+ 天（最近改动：main\.js）/);
     assert.match(r.stdout, /代码比学习收件箱新 \d+ 天且收件箱是空的/);
+  }));
+
+test("未跟踪的新代码文件按 mtime 参与时效性，不静默漏报", () =>
+  withDir((dir) => {
+    scaffoldProject(dir);
+    commitAt(dir, "2024-01-01T00:00:00+0000", "骨架");
+    writeFileSync(join(dir, "main.js"), "console.log(1);\n"); // 未跟踪，git log 看不见
+
+    const r = auditIn(dir);
+    assert.match(r.stdout, /代码比 AGENTS\.md 新 \d+ 天（最近改动：main\.js）/);
+  }));
+
+test("scripts/ 下的业务脚本参与时效性（只排除 audit-context.mjs 自身）", () =>
+  withDir((dir) => {
+    scaffoldProject(dir);
+    commitAt(dir, "2024-01-01T00:00:00+0000", "骨架");
+    writeFileSync(join(dir, "scripts", "main.mjs"), "console.log(1);\n");
+    commitAt(dir, "2024-09-01T00:00:00+0000", "业务脚本");
+
+    const r = auditIn(dir);
+    assert.match(r.stdout, /代码比 AGENTS\.md 新 \d+ 天（最近改动：scripts\/main\.mjs）/);
   }));
 
 test("上下文与代码同期提交时不误报过期", () =>
@@ -290,7 +368,7 @@ test("孤儿文档检查递归 docs/ 子目录，但链接到目录即视为可�
 
 test("框架仓库自身的体检目标（templates 树）是合法的初始化前状态", () => {
   const r = node([TEMPLATE_AUDIT]);
-  assert.equal(r.status, 1);
+  assert.equal(r.status, 0); // 只有 TODO 与缺失 skills 目录的 warning，无 error
   assert.match(r.stdout, /0 个 error/);
-  assert.match(r.stdout, /共 \d+ 处占位符未填充/);
+  assert.match(r.stdout, /TODO\(init\) 残留/);
 });

@@ -39,7 +39,7 @@ Copy-Item context-dev\.agents\skills\* <你的项目>\.agents\skills\ -Recurse
 # 然后在项目里说「初始化项目」即可
 ```
 
-脚手架只创建**缺失**的骨架文件，绝不覆盖你已有的 `AGENTS.md`、`docs/`、`scripts/`。技能也可装到全局 `~/.dsh/skills/`，之后在任何项目里都能直接调用初始化——但**装全局和装项目二选一**，两处都装会出现同名技能的两份不同版本，宿主触发时只会命中其中一份。
+脚手架只创建**缺失**的骨架文件，绝不覆盖你已有的 `AGENTS.md`、`docs/`、`scripts/`。唯一例外：**用 “Use this template” 复制出来的新仓库**会残留框架自己的 `AGENTS.md`（开头写着“这是框架本身的仓库，不要运行 init”）。它带有 `FRAMEWORK-AGENTS` 标记；当且仅当 README 还带着 `FRAMEWORK-README` 标记时，`scaffold.mjs` 会把这份维护者手册受控替换成项目手册。你自己的 `AGENTS.md` 没有这个标记，绝不会被覆盖。技能也可装到全局 `~/.dsh/skills/`，之后在任何项目里都能直接调用初始化——但**装全局和装项目二选一**，两处都装会出现同名技能的两份不同版本，宿主触发时只会命中其中一份。
 
 ### 升级已初始化的项目
 
@@ -107,7 +107,8 @@ README.md / LICENSE / .gitignore / .gitattributes
 - **为什么有学习闭环**：初始化只保证「第一天就懂」，复盘蒸馏保证「越用越懂」。不靠"技能触发次数"、"文档读取频率"这类自觉统计——它们没有可靠的钩子，只会漂移；可靠的是任务里自然产生的纠正信号（哪里不懂、被纠正了什么、卡了多久）。
 - **为什么 `roadmap.md` 必须有「明确不做」**：挡掉 agent 自作主张的扩张。
 - **为什么单一事实源**：一份 `AGENTS.md` + 一份 `.agents/skills/`，不生成任何镜像副本——镜像会制造漂移，而漂移需要第二个机制去盯，属于自造复杂度。
-- **为什么触发用散文而非机器契约**：DSH 按 `description` 触发技能，不消费优先级表或契约文件。状态驱动的技能锚定确定性信号（`init` 锚 `TODO(init)` 残留、`maintain-context` 锚脚本报错），意图驱动的技能靠子步骤串起来（init→product-design、ship-change→record-decision）。加第二份机器可读契约只会制造漂移，属于自造复杂度。
+- **为什么触发用散文而非机器契约**：DSH 按 `description` 触发技能，不消费优先级表或契约文件。状态驱动的技能锚定确定性信号（`init` 锚 `AGENTS.md` 顶部的「这个仓库还没初始化」引用块、`maintain-context` 锚脚本报错），意图驱动的技能靠子步骤串起来（init→product-design、ship-change→record-decision）。加第二份机器可读契约只会制造漂移，属于自造复杂度。
+- **为什么框架 `AGENTS.md` 也带标记**：GitHub Template 会把仓库根目录的 `AGENTS.md` 原样复制进新仓库，而它开头写着“不要运行 init”——不处理会打断模板主路径。给框架维护者手册加 `FRAMEWORK-AGENTS` 标记，`scaffold.mjs` 只有在它和 README 的 `FRAMEWORK-README` 标记**同时**命中时才替换，用户自己的 `AGENTS.md` 依旧绝不覆盖。
 
 ## English summary
 

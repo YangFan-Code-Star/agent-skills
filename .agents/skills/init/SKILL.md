@@ -1,6 +1,6 @@
 ---
 name: init
-description: 把这个 agent 项目模板初始化成一个真实项目——通过分阶段访谈问清项目定位、技术栈、领域概念、红线和范围，然后填充 AGENTS.md 与 docs/ 里的所有 TODO(init) 占位。当用户说"初始化项目"、"应用这个模板"、"帮我把项目建起来"、"续问 init"、"接着上次的问题继续"，或者仓库里还存在 TODO(init) 标记时使用。
+description: 把这个 agent 项目模板初始化成一个真实项目——通过分阶段访谈问清项目定位、技术栈、领域概念、红线和范围，然后填充 AGENTS.md 与 docs/ 里的所有 TODO(init) 占位。当用户说"初始化项目"、"应用这个模板"、"帮我把项目建起来"、"续问 init"、"接着上次的问题继续"，或者 AGENTS.md 顶部还有「这个仓库还没初始化」引用块时使用。
 ---
 
 # 初始化项目
@@ -53,7 +53,7 @@ description: 把这个 agent 项目模板初始化成一个真实项目——通
 
 **第 3 问答"有"就退回完整流程**，敏感数据项目不适用轻量档。
 
-落盘时把没问到的占位符统一换成 `暂缺：轻量初始化未覆盖，/ship-change 首次碰到时现场追问再补`，**不要留 `TODO(init)`**——留着会让体检永远报"未初始化"，把"零占位符 = 初始化完成"这个信号废掉。之后每次 `/ship-change` 碰到"暂缺"的那一格，当场问一句补上，这正是这套框架"越用越懂"的常态路径。
+落盘时和完整流程一样删掉 `AGENTS.md` 顶部的「这个仓库还没初始化」引用块，但**保留同一个 `TODO(init)` 欠账标记**：没问到的占位符改写成 `TODO(init): 轻量初始化未覆盖——/ship-change 首次碰到时现场追问再补`。体检脚本会把 `TODO(init)` 报为 warning（不是"未初始化"的硬错误）：完整初始化的完成线仍是 `TODO(init)` 归零，轻量档则是**有意保留欠账**。之后每次 `/ship-change` 碰到与本次改动相关的 `TODO(init)`，当场问一句补上；与本次改动无关的欠账不要顺手全补。
 
 ### 阶段 0：生成骨架 + 勘察现状
 
@@ -63,7 +63,7 @@ description: 把这个 agent 项目模板初始化成一个真实项目——通
 node --version
 ```
 
-再运行同目录下的脚手架脚本 `scaffold.mjs`，它会把骨架（`AGENTS.md`、`docs/`、`scripts/`、`.agents/evals/`、`.gitignore`）生成到**项目根**（最近的 `.git` 祖先，没有就用当前工作目录），且只创建缺失文件、绝不覆盖已有的：
+再运行同目录下的脚手架脚本 `scaffold.mjs`，它会把骨架（`AGENTS.md`、`docs/`、`scripts/`、`.agents/evals/`、`.gitignore`）生成到**项目根**（最近的 `.git` 祖先，没有就用当前工作目录），且只创建缺失文件、绝不覆盖已有的。唯一例外：**“Use this template” 复制出的新仓库**里，根 `AGENTS.md` 是框架维护者手册（带 `FRAMEWORK-AGENTS` 标记）、README 还带着 `FRAMEWORK-README` 标记时，脚手架会受控替换这份 `AGENTS.md`；你自己的 `AGENTS.md` 没有框架标记，绝不覆盖：
 
 ```bash
 node <与 SKILL.md 同目录>/scaffold.mjs [--root <项目根>] [--dry-run]
@@ -159,7 +159,7 @@ node <与 SKILL.md 同目录>/scaffold.mjs [--root <项目根>] [--dry-run]
 node scripts/audit-context.mjs
 ```
 
-把它报的 error 全部修掉。**只要还有 `TODO(init)` 残留，就说明访谈没做完**——回去补问，不要自己编一个填上。
+把它报的 error 全部修掉，warning 逐条判断。**完整初始化要求 `TODO(init)` 归零**——还有残留就说明访谈没做完，回去补问，不要自己编一个填上。轻量档会保留带「轻量初始化未覆盖」的 `TODO(init)`，那是合法的欠账，由 `/ship-change` 按需补齐；不要为了凑零而把它们改成“已完成”。
 
 7. 最后向用户复述，用一段话，不要用列表：
 
@@ -179,6 +179,6 @@ node scripts/audit-context.mjs
 
 ## 完成之后
 
-`AGENTS.md` 里没有 `TODO(init)` 了，初始化即完成。init 技能可以留着——它靠 `TODO(init)` 残留触发，没有残留时不会被误触发；如果你要拿这个仓库继续孵化别的项目，也正需要它。
+`AGENTS.md` 顶部没有「这个仓库还没初始化」引用块、且 `TODO(init)` 归零时，完整初始化即完成。轻量档完成后引用块同样删掉、但会保留带「轻量初始化未覆盖」的 `TODO(init)`——那是欠账，不是未初始化。init 技能可以留着——它靠引用块触发，不靠 `TODO(init)` 残留触发，所以轻量档的欠账不会每轮都误触发 init；如果你要拿这个仓库继续孵化别的项目，也正需要它。
 
 后续维护交给 `/maintain-context`。

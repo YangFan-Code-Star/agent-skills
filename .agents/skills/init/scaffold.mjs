@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 // 生成项目骨架：把本技能自带的 templates/ 复制到项目根。零依赖。
 // 只创建缺失的文件，绝不覆盖已存在的（用户已有的 AGENTS.md / docs / scripts 优先）。
+// 唯一例外：GitHub Template 复制的仓库会残留框架自己的 AGENTS.md（带 FRAMEWORK-AGENTS
+// 标记）。当且仅当它和 README 里的 FRAMEWORK-README 标记同时存在时，scaffold 受控替换
+// 这份框架维护者手册；用户自己的 AGENTS.md 不含该标记，绝不覆盖。
 // 单一宿主 DSH：只生成 AGENTS.md + .agents/，不生成任何镜像副本。
 // 项目根 = 当前工作目录向上最近的 .git 祖先；没有 .git 就用当前工作目录。
 // 可用 --root <目录> 显式指定项目根；--dry-run 只预览不写入；--help 显示用法。
@@ -10,7 +13,7 @@ import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, writeFileS
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const CONTEXT_DEV_VERSION = "0.2.0";
+export const CONTEXT_DEV_VERSION = "0.3.0";
 
 const TEMPLATES = resolve(dirname(fileURLToPath(import.meta.url)), "templates");
 
@@ -25,6 +28,22 @@ const stripTemplateSuffix = (rel) =>
 // 因此可以安全地随框架升级整体替换。.agents/evals/ 不在此列——init 阶段 3 会把
 // 用户访谈得到的项目红线逐条写进 behavior-cases.md，覆盖它等于删用户内容。
 const FRAMEWORK_DIRS = ["scripts/"];
+
+// GitHub Template 会把框架仓库根目录的 AGENTS.md 一并复制进新仓库。这份维护者手册
+// 开头写着「这是框架本身的仓库，不要运行 init」，不处理会打断 README 承诺的
+// “Use this template → 运行 init”主路径。带标记的才是框架残留，用户的 AGENTS.md 没有。
+const FRAMEWORK_AGENTS_MARKER = "<!-- FRAMEWORK-AGENTS";
+const FRAMEWORK_README_MARKER = "<!-- FRAMEWORK-README";
+
+function shouldReplaceFrameworkAgents(root) {
+  const agentsPath = join(root, "AGENTS.md");
+  const readmePath = join(root, "README.md");
+  if (!existsSync(agentsPath) || !existsSync(readmePath)) return false;
+  return (
+    readFileSync(agentsPath, "utf8").includes(FRAMEWORK_AGENTS_MARKER) &&
+    readFileSync(readmePath, "utf8").includes(FRAMEWORK_README_MARKER)
+  );
+}
 
 const USAGE = `用法：node scaffold.mjs [--root <项目根>] [--dry-run] [--update-framework] [--help]
 
@@ -148,6 +167,7 @@ if (!EXPLICIT_ROOT && resolve(root) !== resolve(process.cwd())) {
 rejectSymlinkRoot(root);
 const created = [];
 const updated = [];
+const replaced = [];
 const skipped = [];
 // 源路径（带 .tmpl）与目标路径（剥掉 .tmpl）成对处理：写入、跳过判断、安全检查都用目标路径。
 const templateFiles = collect(TEMPLATES).map((src) => ({ src, dst: stripTemplateSuffix(src) }));
@@ -162,12 +182,13 @@ for (const { dst } of templateFiles) rejectUnsafePath(root, join(root, dst));
 for (const { src, dst: rel } of templateFiles) {
   const dst = join(root, rel);
   const overwrite = UPDATE_FRAMEWORK && isFrameworkFile(rel);
-  if (existsSync(dst) && !overwrite) { skipped.push(rel); continue; }
-  const bucket = existsSync(dst) ? updated : created;
+  const replaceAgents = rel === "AGENTS.md" && existsSync(dst) && !overwrite && shouldReplaceFrameworkAgents(root);
+  if (existsSync(dst) && !overwrite && !replaceAgents) { skipped.push(rel); continue; }
+  const bucket = replaceAgents ? replaced : existsSync(dst) ? updated : created;
   if (DRY_RUN) { bucket.push(rel); continue; }
   mkdirSync(dirname(dst), { recursive: true });
   rejectUnsafePath(root, dst);
-  writeFileSync(dst, readFileSync(join(TEMPLATES, src)), overwrite ? undefined : { flag: "wx" });
+  writeFileSync(dst, readFileSync(join(TEMPLATES, src)), (overwrite || replaceAgents) ? undefined : { flag: "wx" });
   bucket.push(rel);
 }
 
@@ -177,6 +198,10 @@ console.log(`模板源：${TEMPLATES}`);
 if (DRY_RUN) console.log("\n[dry-run] 预览，未写入任何文件");
 console.log(`\n${DRY_RUN ? "将新建" : "新建"} ${created.length} 个文件：`);
 for (const f of created.sort()) console.log(`  + ${f}`);
+if (replaced.length) {
+  console.log(`\n${DRY_RUN ? "将替换" : "已替换"} ${replaced.length} 个模板复制残留文件：`);
+  for (const f of replaced.sort()) console.log(`  ~ ${f}`);
+}
 if (updated.length) {
   console.log(`\n${DRY_RUN ? "将升级" : "已升级"} ${updated.length} 个框架文件（--update-framework，覆盖）：`);
   for (const f of updated.sort()) console.log(`  ^ ${f}`);
