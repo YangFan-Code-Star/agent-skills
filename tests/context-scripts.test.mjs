@@ -1,12 +1,20 @@
 // scaffold.mjs 与 audit-context.mjs 的冒烟测试。零依赖：node:test + child_process。
 // 运行：node --test tests/
-// 覆盖：骨架生成与幂等、--dry-run、参数校验、--help、
+// 覆盖：骨架生成与幂等、--dry-run、符号链接边界、参数校验、--help、
 //       audit 在初始化前 / 装完技能后的状态、框架仓库自身的体检目标。
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, existsSync, readdirSync, rmSync, cpSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -74,6 +82,37 @@ test("--dry-run 只预览不写入", () =>
     assert.match(r.stdout, /\[dry-run\] 预览，未写入任何文件/);
     assert.equal(readdirSync(dir).length, 0);
   }));
+
+test("拒绝沿项目内的目录符号链接写到项目根之外", () =>
+  withDir((dir) => {
+    const project = join(dir, "project");
+    const outside = join(dir, "outside");
+    mkdirSync(project);
+    mkdirSync(outside);
+    symlinkSync(outside, join(project, "docs"), process.platform === "win32" ? "junction" : "dir");
+
+    const r = node([SCAFFOLD, "--root", project]);
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /拒绝写入符号链接路径：docs/);
+    assert.equal(readdirSync(outside).length, 0);
+  }));
+
+test(
+  "拒绝写入指向项目根之外的文件符号链接",
+  { skip: process.platform === "win32" ? "Windows 普通用户无法稳定创建文件符号链接" : false },
+  () => withDir((dir) => {
+    const project = join(dir, "project");
+    const outside = join(dir, "outside");
+    mkdirSync(project);
+    mkdirSync(outside);
+    symlinkSync(join(outside, "AGENTS.md"), join(project, "AGENTS.md"), "file");
+
+    const r = node([SCAFFOLD, "--root", project]);
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /拒绝写入符号链接路径：AGENTS\.md/);
+    assert.equal(existsSync(join(outside, "AGENTS.md")), false);
+  }),
+);
 
 test("--root 缺值时报用法错误，而不是把下一个参数当目录", () => {
   const r = node([SCAFFOLD, "--root"]);

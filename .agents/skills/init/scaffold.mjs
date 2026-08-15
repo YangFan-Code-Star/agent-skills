@@ -6,8 +6,8 @@
 // 可用 --root <目录> 显式指定项目根；--dry-run 只预览不写入；--help 显示用法。
 // 用法：node scaffold.mjs [--root <项目根>] [--dry-run] [--help]
 
-import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { join, dirname, resolve, relative } from "node:path";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const TEMPLATES = resolve(dirname(fileURLToPath(import.meta.url)), "templates");
@@ -77,6 +77,27 @@ function collect(dir, base = dir, out = []) {
   return out;
 }
 
+function rejectUnsafePath(root, target) {
+  const rel = relative(root, target);
+  if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    console.error(`拒绝写入项目根之外：${target}`);
+    process.exit(1);
+  }
+  let current = root;
+  for (const part of rel.split(sep).filter(Boolean)) {
+    current = join(current, part);
+    try {
+      if (lstatSync(current).isSymbolicLink()) {
+        console.error(`拒绝写入符号链接路径：${relative(root, current)}`);
+        process.exit(1);
+      }
+    } catch (error) {
+      if (error?.code === "ENOENT") break;
+      throw error;
+    }
+  }
+}
+
 if (!existsSync(TEMPLATES)) {
   console.error(`找不到模板目录：${TEMPLATES}`);
   process.exit(1);
@@ -88,13 +109,18 @@ if (!EXPLICIT_ROOT && resolve(root) !== resolve(process.cwd())) {
 }
 const created = [];
 const skipped = [];
+const templateFiles = collect(TEMPLATES);
 
-for (const rel of collect(TEMPLATES)) {
+// 写入前先完整预检，避免遇到符号链接时留下半套骨架。
+for (const rel of templateFiles) rejectUnsafePath(root, join(root, rel));
+
+for (const rel of templateFiles) {
   const dst = join(root, rel);
   if (existsSync(dst)) { skipped.push(rel); continue; }
   if (DRY_RUN) { created.push(rel); continue; }
   mkdirSync(dirname(dst), { recursive: true });
-  writeFileSync(dst, readFileSync(join(TEMPLATES, rel)));
+  rejectUnsafePath(root, dst);
+  writeFileSync(dst, readFileSync(join(TEMPLATES, rel)), { flag: "wx" });
   created.push(rel);
 }
 
