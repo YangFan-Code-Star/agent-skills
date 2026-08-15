@@ -9,8 +9,11 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-// AGENTS.md 每次对话都全量加载，32 KiB 是保持精简的自律标杆，超出就该往 docs/ 搬。
-const AGENTS_BYTE_CAP = 32 * 1024;
+// AGENTS.md 每次对话都全量加载，字节上限是保持精简的自律标杆，超出就该往 docs/ 搬。
+// 取值与 250 行的硬上限同量级：中文约每行 50 字节，250 行≈12.5 KiB。定得更高（如 32 KiB）
+// 时行数上限总会先触发，字节门禁就成了永不执行的死分支。
+const AGENTS_BYTE_CAP = 12 * 1024;
+const AGENTS_BYTE_LABEL = `${AGENTS_BYTE_CAP / 1024} KiB`;
 const AGENTS_LINE_TARGET = 150;
 const SKILL_BODY_LINE_CAP = 500;
 const STALE_DAYS = 60;
@@ -74,9 +77,9 @@ if (!agentsFiles.some((f) => rel(f) === "AGENTS.md")) {
   if (totalBytes > AGENTS_BYTE_CAP) {
     err(`AGENTS.md 合计 ${totalBytes} 字节，超过 ${AGENTS_BYTE_CAP} 字节自律上限，应往 docs/ 搬`);
   } else if (pct > 75) {
-    warn(`所有 AGENTS.md 合计 ${totalBytes} 字节，已用掉 32 KiB 自律预算的 ${pct}%`);
+    warn(`所有 AGENTS.md 合计 ${totalBytes} 字节，已用掉 ${AGENTS_BYTE_LABEL} 自律预算的 ${pct}%`);
   } else {
-    notes.push(`AGENTS.md 合计 ${totalBytes} 字节，占 32 KiB 自律预算的 ${pct}%`);
+    notes.push(`AGENTS.md 合计 ${totalBytes} 字节，占 ${AGENTS_BYTE_LABEL} 自律预算的 ${pct}%`);
   }
 }
 
@@ -136,7 +139,7 @@ const skillDirs = existsSync(skillsDir)
   ? readdirSync(skillsDir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name)
   : [];
 if (!existsSync(skillsDir)) {
-  warn("没有 .agents/skills/ 目录，宿主不会加载任何项目级技能（技能可全局安装于 ~/.dsh/skills）");
+  warn("没有 .agents/skills/ 目录，宿主不会加载任何项目级技能（技能也可能装在宿主的全局技能目录）");
 } else {
   if (skillDirs.length === 0) warn(".agents/skills/ 是空的");
 
@@ -206,9 +209,11 @@ const isContext = (f) => {
   return /(^|[\\/])AGENTS(\.override)?\.md$/.test(r) || r.startsWith("docs/") || r.startsWith(".agents/");
 };
 const codeFiles = allFiles.filter((f) => !isContext(f) && !rel(f).startsWith("scripts/"));
+const newestCode = codeFiles.length > 0
+  ? codeFiles.reduce((a, b) => (statSync(a).mtimeMs > statSync(b).mtimeMs ? a : b))
+  : null;
 
-if (codeFiles.length > 0 && existsSync(join(ROOT, "AGENTS.md"))) {
-  const newestCode = codeFiles.reduce((a, b) => (statSync(a).mtimeMs > statSync(b).mtimeMs ? a : b));
+if (newestCode && existsSync(join(ROOT, "AGENTS.md"))) {
   const gapDays = (statSync(newestCode).mtimeMs - statSync(join(ROOT, "AGENTS.md")).mtimeMs) / 86_400_000;
   if (gapDays > STALE_DAYS) {
     warn(`代码比 AGENTS.md 新 ${Math.round(gapDays)} 天（最近改动：${rel(newestCode)}），走一遍 /maintain-context`);
@@ -257,6 +262,14 @@ if (!existsSync(inboxPath)) {
   if (inboxEntries > 0) {
     if (inboxEntries >= 10) warn(`学习收件箱积压 ${inboxEntries} 条候选，跑 /maintain-context 合并`);
     else notes.push(`学习收件箱有 ${inboxEntries} 条待合并候选，跑 /maintain-context`);
+  } else if (newestCode) {
+    // 空收件箱有两种含义：刚合并完（健康），或蒸馏环节从没执行过（闭环没转）。这两种在输出里
+    // 长得一样，就是这个框架最讨厌的"安静地说谎"。收件箱的 mtime 恰好是闭环最后一次转动的时间
+    // ——写入和清空都会更新它——所以不需要额外的状态文件就能把两种含义分开。
+    const idleDays = (statSync(newestCode).mtimeMs - statSync(inboxPath).mtimeMs) / 86_400_000;
+    if (idleDays > STALE_DAYS) {
+      warn(`代码比学习收件箱新 ${Math.round(idleDays)} 天且收件箱是空的，/ship-change 的复盘蒸馏可能一直被跳过`);
+    }
   }
 }
 
@@ -266,7 +279,7 @@ if (existsSync(join(ROOT, "AGENTS.md"))) {
   const referenced = new Set(
     [...stripFences(read(join(ROOT, "AGENTS.md"))).matchAll(/`[/$]([a-z][a-z0-9-]{2,})`/g)].map((m) => m[1])
   );
-  // 技能目录不存在时（技能可能全局安装于 ~/.dsh/skills），不按引用逐条报 error——缺目录已由上面的 warning 覆盖；
+  // 技能目录不存在时（技能可能装在宿主的全局技能目录），不按引用逐条报 error——缺目录已由上面的 warning 覆盖；
   // 目录存在才严格判定引用齐全，此时缺技能才是真实的安装不完整。
   if (existsSync(skillsDir)) {
     for (const name of referenced) {

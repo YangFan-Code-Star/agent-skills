@@ -29,9 +29,12 @@
 只需把技能目录拷进你项目，再跑一次初始化：
 
 ```bash
+# 目标目录必须先存在：不存在时 Copy-Item 会把第一个技能的内容当成 skills 本身，静默装错
 # Windows (PowerShell)：
+New-Item -ItemType Directory -Force <你的项目>\.agents\skills | Out-Null
 Copy-Item context-dev\.agents\skills\* <你的项目>\.agents\skills\ -Recurse
 # macOS / Linux：
+# mkdir -p <你的项目>/.agents/skills
 # cp -r context-dev/.agents/skills/* <你的项目>/.agents/skills/
 # 然后在项目里说「初始化项目」即可
 ```
@@ -66,7 +69,7 @@ Codex 目前只验证了五个 Skill 的安装、frontmatter 与脚本机械检�
     scaffold.mjs                         把 templates/ 生成到项目根
     references/                          访谈题库与落盘映射
     templates/                           项目骨架模板（被 scaffold 到项目根）
-      AGENTS.md                          工作手册模板（目标 150 行内 / 32 KiB 自律上限）
+      AGENTS.md                          工作手册模板（目标 150 行内 / 12 KiB 自律上限）
       docs/                              知识库：goals / architecture / glossary / roadmap / troubleshooting / decisions
       docs/learning-inbox.md             复盘蒸馏收件箱（队列）
       scripts/audit-context.mjs          确定性体检脚本
@@ -77,7 +80,7 @@ Codex 目前只验证了五个 Skill 的安装、frontmatter 与脚本机械检�
   maintain-context/                      体检 + 合并收件箱 + 删过期内容
 tests/                                   框架脚本冒烟测试（node --test）
 .github/workflows/ci.yml                 框架自身的 CI
-README.md / LICENSE / .gitignore
+README.md / LICENSE / .gitignore / .gitattributes
 ```
 
 > 注意：体检脚本的 ROOT 由脚本自身位置推导。在**框架仓库**里直接运行 `templates/scripts/audit-context.mjs`，检查的是 `templates/` 模板树（初始化前状态），不是仓库根；对项目运行请用脚手架生成的 `scripts/audit-context.mjs`。

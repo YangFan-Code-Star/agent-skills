@@ -25,7 +25,7 @@ description: 当 scripts/audit-context.mjs 报 error/warning、学习收件箱�
 node scripts/audit-context.mjs
 ```
 
-脚本查的是机械问题：`AGENTS.md` 行数与字节数、文档链接是否有效、技能 frontmatter 是否完整、`TODO(init)` 残留、上下文文件与代码的更新时间差、敏感文件是否被忽略。
+脚本查的是机械问题：`AGENTS.md` 行数与字节数、文档链接是否有效、技能 frontmatter 是否完整、`TODO(init)` 残留、上下文文件与代码的更新时间差、敏感文件是否被忽略、学习收件箱是积压还是长期闲置。
 
 **先把 error 全部修掉，warning 逐条判断。**
 
