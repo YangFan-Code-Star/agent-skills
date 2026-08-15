@@ -1,7 +1,7 @@
 // scaffold.mjs 与 audit-context.mjs 的冒烟测试。零依赖：node:test + child_process。
-// 运行：node --test tests/
-// 覆盖：骨架生成与幂等、--dry-run、符号链接边界、参数校验、--help、
-//       audit 在初始化前 / 装完技能后的状态、框架仓库自身的体检目标。
+// 运行：node --test（或 node --test tests/context-scripts.test.mjs）
+// 覆盖：骨架生成与幂等、--dry-run、符号链接边界（含 --root 本身为符号链接）、
+//       参数校验、--help、audit 在初始化前 / 装完技能后的状态、框架仓库自身的体检目标。
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -113,6 +113,25 @@ test(
     assert.equal(existsSync(join(outside, "AGENTS.md")), false);
   }),
 );
+
+test("拒绝把 --root 本身为符号链接的项目根（不写入链接目标）", () =>
+  withDir((dir) => {
+    const link = join(dir, "project");
+    const outside = join(dir, "outside");
+    mkdirSync(outside);
+    symlinkSync(outside, link, process.platform === "win32" ? "junction" : "dir");
+
+    const r = node([SCAFFOLD, "--root", link]);
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /拒绝把符号链接作为项目根：/);
+    assert.equal(readdirSync(outside).length, 0);
+
+    // dry-run 同样拒绝：预览也不该宣称要沿链接根写入
+    const dry = node([SCAFFOLD, "--root", link, "--dry-run"]);
+    assert.equal(dry.status, 1);
+    assert.match(dry.stderr, /拒绝把符号链接作为项目根：/);
+    assert.equal(readdirSync(outside).length, 0);
+  }));
 
 test("--root 缺值时报用法错误，而不是把下一个参数当目录", () => {
   const r = node([SCAFFOLD, "--root"]);

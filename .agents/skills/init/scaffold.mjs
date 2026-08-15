@@ -98,6 +98,23 @@ function rejectUnsafePath(root, target) {
   }
 }
 
+// 项目根本身不能是符号链接：rejectUnsafePath 只检查根内部的组件，若 --root（或推断
+// 出的根）本身是链接，写入会整体落到链接目标——实测会让 12 个骨架文件出现在用户
+// 以为的"项目根"之外。拒绝而不是跟随，与仓库内符号链接的处理方式一致。
+// 只检查根节点自身，不检查祖先路径：macOS 的 /tmp → /private/tmp 这类平台常态若
+// 一并拒绝会大量误伤；祖先链接按系统语义跟随，写入仍物理落在用户指定的真实目录内。
+function rejectSymlinkRoot(root) {
+  try {
+    if (lstatSync(root).isSymbolicLink()) {
+      console.error(`拒绝把符号链接作为项目根：${root}（确需此目录，请用 --root 指向链接目标的真实路径）`);
+      process.exit(1);
+    }
+  } catch (error) {
+    if (error?.code === "ENOENT") return; // 根尚不存在，mkdirSync 会创建它
+    throw error;
+  }
+}
+
 if (!existsSync(TEMPLATES)) {
   console.error(`找不到模板目录：${TEMPLATES}`);
   process.exit(1);
@@ -107,10 +124,15 @@ const root = projectRoot(EXPLICIT_ROOT);
 if (!EXPLICIT_ROOT && resolve(root) !== resolve(process.cwd())) {
   console.warn(`注意：项目根推断为 ${root}（cwd 之上存在 .git）。若非预期，用 --root 显式指定。`);
 }
+rejectSymlinkRoot(root);
 const created = [];
 const skipped = [];
 const templateFiles = collect(TEMPLATES);
 
+// 威胁模型：路径与符号链接检查是防止"仓库内被放了链接"或"--root 传错/被换成链接"
+// 的最佳努力防线（对本地单用户场景足够），不是对抗并发修改的安全边界——检查与写入
+// 之间存在极窄的 TOCTOU 窗口；跨平台的原子方案（openat/AT_SYMLINK_NOFOLLOW 等）代价
+// 过高，明确不承诺。实际覆盖的行为边界由 tests/context-scripts.test.mjs 验证。
 // 写入前先完整预检，避免遇到符号链接时留下半套骨架。
 for (const rel of templateFiles) rejectUnsafePath(root, join(root, rel));
 
