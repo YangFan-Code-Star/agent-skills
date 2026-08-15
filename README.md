@@ -18,14 +18,11 @@
 
 ### A. 作为新项目模板
 
-```bash
-git clone https://github.com/YangFan-Code-Star/context-dev.git my-project
-cd my-project
-rm -rf .git && git init
-# 在 agent 里打开，说「初始化项目」即可（描述自动触发，也可显式调用 init 技能）
-```
+在 GitHub 仓库页点击 **Use this template → Create a new repository**，克隆新仓库后在 agent 里说「初始化项目」即可（描述会自动触发，也可显式调用 `init` 技能）。
 
 `init` 先生成骨架（`AGENTS.md`、`docs/`、`scripts/`、`.agents/evals/`、`.gitignore`），再分阶段访谈你——先定位项目，再按形态（Web / CLI / 数据流水线 / 库 / 机器学习 / 自动化脚本）深挖，然后问红线与范围。每个阶段结束立刻落盘，随时可中断、可续问。
+
+模板会保留 `tests/context-scripts.test.mjs` 和 `.github/workflows/ci.yml`，它们只验证 context-dev 的脚手架与体检脚本，不代表你的项目代码已经有测试或 CI；初始化时仍需按项目技术栈补齐真实验证链路。
 
 ### B. 装进现有项目
 
@@ -43,11 +40,14 @@ Copy-Item context-dev\.agents\skills\* <你的项目>\.agents\skills\ -Recurse
 
 ## 支持的宿主
 
-本框架针对 **DSH（DeepSeek Harness）** 设计，单一事实源，不做镜像副本：
+本框架正式支持 **DSH（DeepSeek Harness）**，单一事实源，不做镜像副本：
 
-| 入口文件 | 技能目录 |
-| --- | --- |
-| `AGENTS.md` | `.agents/skills/`（全局 `~/.dsh/skills/`） |
+| 宿主 | 状态 | 入口文件 | 技能目录 |
+| --- | --- | --- | --- |
+| DSH | 正式支持 | `AGENTS.md` | `.agents/skills/`（全局 `~/.dsh/skills/`） |
+| Codex | 可安装，但尚未验证运行时路由 | `AGENTS.md` | 全局 `~/.codex/skills/` |
+
+Codex 目前只验证了五个 Skill 的安装、frontmatter 与脚本机械检查；Skill 发现、跨 Skill 调用和完整初始化流程尚未做宿主端到端验证，因此暂不列入正式支持范围。
 
 ## 技能
 
@@ -75,7 +75,8 @@ Copy-Item context-dev\.agents\skills\* <你的项目>\.agents\skills\ -Recurse
   ship-change/                           交付改动的标准流程（含复盘蒸馏）
   record-decision/                       把技术取舍写成 ADR
   maintain-context/                      体检 + 合并收件箱 + 删过期内容
-  tests/                                 脚本冒烟测试（node --test，见 .github/workflows/）
+tests/                                   框架脚本冒烟测试（node --test）
+.github/workflows/ci.yml                 框架自身的 CI
 README.md / LICENSE / .gitignore
 ```
 
@@ -97,6 +98,8 @@ README.md / LICENSE / .gitignore
 `context-dev` is a self-improving agent-context framework for DeepSeek Harness. The core idea: context is a budget. So it splits knowledge into four layers — `AGENTS.md` (loaded every conversation), skills (loaded on task match), `docs/` (read on demand), and scripts/evals (run on demand). A staged interview (`init`) captures "what only you know" — goals, red lines, terminology, rejected approaches — into that layered documentation. After every task, `ship-change` distills corrections and hard-won knowledge into a learning inbox; `maintain-context` periodically merges them back and prunes stale rules. The result: the agent gets smarter the more you use it, without re-explaining your project every time.
 
 Language-agnostic — the skeleton is Markdown plus one zero-dependency Node script.
+
+The five Skills can be installed in Codex, but runtime routing and the complete cross-Skill workflow have not yet been validated there; Codex is not currently an officially supported host.
 
 ## License
 

@@ -69,7 +69,7 @@ node <与 SKILL.md 同目录>/scaffold.mjs [--root <项目根>] [--dry-run]
 - 目录结构（有没有已存在的源码）
 - 包管理文件：`package.json` / `pyproject.toml` / `Cargo.toml` / `go.mod` / `pom.xml` 等——语言、框架、依赖、脚本命令都在这里
 - `README.md`（模板自带的那份不算）
-- CI 配置：`.github/workflows/`、`.gitlab-ci.yml`
+- CI 配置：`.github/workflows/`、`.gitlab-ci.yml`。若仓库仍带 `FRAMEWORK-README` 标记，context-dev 自带的 `tests/context-scripts.test.mjs` 与 `.github/workflows/ci.yml` 只验证上下文框架，不算项目代码的 CI
 - `git log`：如果是接管已有项目，最近的提交能看出在做什么
 
 然后告诉用户你看到了什么，让他确认或纠正：
@@ -131,7 +131,7 @@ node <与 SKILL.md 同目录>/scaffold.mjs [--root <项目根>] [--dry-run]
 1. 按 **[references/output-map.md](references/output-map.md)** 把所有答案写进对应文件。每个答案都有明确的归属，不要把什么都堆进 `AGENTS.md`。
 2. 删掉 `AGENTS.md` 顶部的「这个仓库还没初始化」引用块。
 3. **整份重写 `README.md`。** 它现在还是框架自己的说明书（讲的是 context-dev 框架，不是你的项目），而这是任何人打开仓库看到的第一份文件。换成这个项目的：一句话简介、怎么装怎么跑、目录结构。连同顶部的 `FRAMEWORK-README` 标记一起删掉。
-4. 按项目形态创建源码和测试目录，更新 `AGENTS.md` 的目录地图。
+4. 按项目形态创建源码和测试目录，更新 `AGENTS.md` 的目录地图。若这是从 context-dev 模板创建的新仓库，同时补上项目代码自己的验证命令与 CI；框架自带的冒烟测试可以保留，但不能代替项目验证。
 5. **更新 `.gitignore`。** 逐类过一遍，不要只看一眼就跳过：
    - 依赖目录（`node_modules/`、`.venv/`、`vendor/`）
    - 构建产物（`dist/`、`build/`、`.next/`、`target/`）
