@@ -1,6 +1,6 @@
 // scaffold.mjs 与 audit-context.mjs 的冒烟测试。零依赖：node:test + child_process。
 // 运行：node --test（或 node --test tests/context-scripts.test.mjs）
-// 覆盖：骨架生成与幂等、.tmpl 后缀剥离、.gitignore 两处同步、--dry-run、
+// 覆盖：骨架生成与幂等、.tmpl 后缀剥离、scaffold 不安装技能、.gitignore 两处同步、--dry-run、
 //       --update-framework 的覆盖边界、符号链接边界（含 --root 本身为符号链接）、
 //       参数校验、--help、audit 在初始化前 / 装完技能后的状态、轻量欠账单独计数、
 //       时效性检查用 git 提交时间而非 mtime、孤儿文档检查递归 docs/ 子目录、
@@ -112,6 +112,12 @@ test("模板里的 AGENTS.md.tmpl 落到项目根时剥掉后缀，项目里不�
     // 宿主递归发现 AGENTS.md，模板那份必须在框架仓库里带后缀存放，不能被注入
     assert.equal(existsSync(join(REPO, ".agents", "skills", "init", "templates", "AGENTS.md")), false);
     assert.ok(existsSync(join(REPO, ".agents", "skills", "init", "templates", "AGENTS.md.tmpl")));
+  }));
+
+test("scaffold 只生成骨架，不安装 .agents/skills/（技能挂载由 init 阶段 0 检查）", () =>
+  withDir((dir) => {
+    scaffoldProject(dir);
+    assert.equal(existsSync(join(dir, ".agents", "skills")), false);
   }));
 
 test("根目录与模板树的 .gitignore 保持一致（避免两处漂移）", () => {

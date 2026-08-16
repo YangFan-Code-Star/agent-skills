@@ -63,17 +63,32 @@ description: 把这个 agent 项目模板初始化成一个真实项目——通
 node --version
 ```
 
-再运行同目录下的脚手架脚本 `scaffold.mjs`，它会把骨架（`AGENTS.md`、`docs/`、`scripts/`、`.agents/evals/`、`.gitignore`）生成到**项目根**（最近的 `.git` 祖先，没有就用当前工作目录），且只创建缺失文件、绝不覆盖已有的。唯一例外：**“Use this template” 复制出的新仓库**里，根 `AGENTS.md` 是框架维护者手册（带 `FRAMEWORK-AGENTS` 标记）、README 还带着 `FRAMEWORK-README` 标记时，脚手架会受控替换这份 `AGENTS.md`；你自己的 `AGENTS.md` 没有框架标记，绝不覆盖：
+**先确认技能挂载，再生成骨架。** `scaffold.mjs` 只生成 12 个骨架文件，**不安装技能**；项目根没有 `.agents/skills/` 时，初始化完成后 `/ship-change`、`/maintain-context` 不会被宿主发现。先用 dry-run 拿到项目根并预览：
 
 ```bash
-node <与 SKILL.md 同目录>/scaffold.mjs [--root <项目根>] [--dry-run]
+node <与 SKILL.md 同目录>/scaffold.mjs --dry-run [--root <项目根>]
+```
+
+它打印的「项目根：…」就是后续所有步骤的根。按这个根检查技能挂载：
+
+- `<项目根>/.agents/skills/init/SKILL.md` 存在 → 项目级技能已挂载，继续。
+- 不存在，但本技能自身路径在全局技能目录下（如 `~/.dsh/skills/`、`~/.codex/skills/`）→ 全局技能已覆盖本项目，和用户确认「用全局技能，不复制进项目」后继续（全局和项目级二选一，不要两处都装）。
+- 不存在，且本技能也不在全局目录（例如你在另一个仓库里运行 init）→ 停一下，把本技能所在的 skills 目录整套复制到 `<项目根>/.agents/skills/`，确认 `init`、`ship-change`、`maintain-context` 等目录都在，再继续：
+
+```bash
+mkdir -p <项目根>/.agents/skills
+cp -r <本技能所在 skills 目录>/* <项目根>/.agents/skills/
+```
+
+确认挂载后，再正式生成骨架。`scaffold.mjs` 会把骨架（`AGENTS.md`、`docs/`、`scripts/`、`.agents/evals/`、`.gitignore`）生成到项目根（最近的 `.git` 祖先，没有就用当前工作目录），且只创建缺失文件、绝不覆盖已有的。唯一例外：**“Use this template” 复制出的新仓库**里，根 `AGENTS.md` 是框架维护者手册（带 `FRAMEWORK-AGENTS` 标记）、README 还带着 `FRAMEWORK-README` 标记时，脚手架会受控替换这份 `AGENTS.md`；你自己的 `AGENTS.md` 没有框架标记，绝不覆盖：
+
+```bash
+node <与 SKILL.md 同目录>/scaffold.mjs [--root <项目根>]
 ```
 
 `--root` 显式指定项目根（monorepo 子目录、尚未 `git init` 时用它）；`--dry-run` 只预览将新建/跳过哪些文件，不写入。
 
 脚手架是**单一宿主**设计：只生成一份 `AGENTS.md` + 一份 `.agents/`（不生成任何镜像副本）；`docs/`、`scripts/`、`.gitignore` 也由脚手架一并补齐。
-
-`scaffold.mjs` 会自己定位项目根并打印「项目根：…」，用它输出的路径核对。脚本就在本技能目录下，不必按宿主的安装位置去猜。
 
 **本技能后续所有步骤里的 `AGENTS.md`、`docs/`、`scripts/` 都指项目根目录（scaffold 生成后的位置）。**
 

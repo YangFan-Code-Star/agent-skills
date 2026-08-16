@@ -39,6 +39,8 @@ Copy-Item context-dev\.agents\skills\* <你的项目>\.agents\skills\ -Recurse
 # 然后在项目里说「初始化项目」即可
 ```
 
+`init` 阶段 0 会先检查目标项目是否已挂载技能；如果你只生成了骨架却忘了拷技能，它会先让你确认「用全局技能」还是「复制进项目」，再继续生成骨架。
+
 脚手架只创建**缺失**的骨架文件，绝不覆盖你已有的 `AGENTS.md`、`docs/`、`scripts/`。唯一例外：**用 “Use this template” 复制出来的新仓库**会残留框架自己的 `AGENTS.md`（开头写着“这是框架本身的仓库，不要运行 init”）。它带有 `FRAMEWORK-AGENTS` 标记；当且仅当 README 还带着 `FRAMEWORK-README` 标记时，`scaffold.mjs` 会把这份维护者手册受控替换成项目手册。你自己的 `AGENTS.md` 没有这个标记，绝不会被覆盖。技能也可装到全局 `~/.dsh/skills/`，之后在任何项目里都能直接调用初始化——但**装全局和装项目二选一**，两处都装会出现同名技能的两份不同版本，宿主触发时只会命中其中一份。
 
 ### 升级已初始化的项目
