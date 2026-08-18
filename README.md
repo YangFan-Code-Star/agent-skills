@@ -4,7 +4,7 @@
 
 一套让 agent 越用越懂项目的技能框架：把「只有你知道、代码里读不出来」的信息固化成按需加载的分层文档，每次任务结束后把「纠正信号」蒸馏回收件箱、定期合并回上下文，形成自我进化的闭环。
 
-语言无关——骨架是 Markdown + 一个零依赖 Node 脚本，源码目录留空，由初始化访谈按项目形态生成。
+语言无关——骨架是 Markdown + 零依赖 Node 脚本，源码目录留空，由初始化访谈按项目形态生成。分两档发行：**完整版**（`.agents/skills/`，五个技能）和 **lite 轻量版**（`lite/`，两个技能、四个骨架文件），按项目复杂度和协作方式选一套。
 
 > **English:** A self-improving agent-context framework for DeepSeek Harness. It turns "what only you know" into layered, on-demand documentation, then distills every task's corrections back into that context — so the agent gets smarter the more you use it. See [English summary](#english-summary).
 
@@ -14,7 +14,7 @@
 
 这套框架把「教会 agent」从口口相传，变成文件结构 + 强制流程。
 
-## 两种用法
+## 完整版用法
 
 ### A. 作为新项目模板
 
@@ -43,6 +43,23 @@ Copy-Item context-dev\.agents\skills\* <你的项目>\.agents\skills\ -Recurse
 
 脚手架只创建**缺失**的骨架文件，绝不覆盖你已有的 `AGENTS.md`、`docs/`、`scripts/`。唯一例外：**用 “Use this template” 复制出来的新仓库**会残留框架自己的 `AGENTS.md`（开头写着“这是框架本身的仓库，不要运行 init”）。它带有 `FRAMEWORK-AGENTS` 标记；当且仅当 README 还带着 `FRAMEWORK-README` 标记时，`scaffold.mjs` 会把这份维护者手册受控替换成项目手册。你自己的 `AGENTS.md` 没有这个标记，绝不会被覆盖。技能也可装到全局 `~/.dsh/skills/`，之后在任何项目里都能直接调用初始化——但**装全局和装项目二选一**，两处都装会出现同名技能的两份不同版本，宿主触发时只会命中其中一份。
 
+## 轻量版 lite
+
+给个人 / 中小型项目用：周末小工具、一次性脚本、试验原型、个人研究，也适合想长期迭代但不引入 PR / CL / 代码审查等团队流程的项目。完整版一次访谈二三十题、生成 12 个文件，对这些项目是负担而不是帮助。
+
+`lite/` 是独立发行包，与完整版**二选一安装**：只装 2 个技能（`init` + `maintain`），只生成 4 个骨架文件（`AGENTS.md`、`.gitignore`、`docs/plan.md`、`docs/log.md`），初始化固定只问 3 个问题，没有 `audit-context.mjs`、`.agents/evals/`、ADR 模板和框架自带 CI——个人 / 中小型项目的质量门禁就是它自己的测试命令。
+
+```bash
+# 装技能（项目级；也可以装到 ~/.dsh/skills/，二选一）
+mkdir -p <你的项目>/.agents/skills
+cp -r context-dev/lite/skills/* <你的项目>/.agents/skills/
+# 生成骨架
+node context-dev/lite/scaffold.mjs --root <你的项目>
+# 然后在项目里说「初始化项目」
+```
+
+安装、三个问题、日常循环和升级说明见 [lite/README.md](lite/README.md)。
+
 ### 升级已初始化的项目
 
 `scripts/audit-context.mjs` 是初始化那天复制过去的，不会随框架自动更新（文件头写着它的 context-dev 版本号）。想升级：
@@ -62,7 +79,7 @@ node <技能目录>/scaffold.mjs --root <你的项目> --update-framework
 | DSH | 正式支持 | `AGENTS.md` | `.agents/skills/`（全局 `~/.dsh/skills/`） |
 | Codex | 可安装，但尚未验证运行时路由 | `AGENTS.md` | 全局 `~/.codex/skills/` |
 
-Codex 目前只验证了五个 Skill 的安装、frontmatter 与脚本机械检查；Skill 发现、跨 Skill 调用和完整初始化流程尚未做宿主端到端验证，因此暂不列入正式支持范围。
+Codex 目前只验证了完整版五个 Skill 的安装、frontmatter 与脚本机械检查；Skill 发现、跨 Skill 调用和完整初始化流程尚未做宿主端到端验证，因此暂不列入正式支持范围。lite 复用同一套 `SKILL.md` 触发机制，但尚未单独做宿主端到端验证；当前对它的自动化保证是 scaffold 冒烟测试与 frontmatter 检查。
 
 ## 技能
 
@@ -75,7 +92,7 @@ Codex 目前只验证了五个 Skill 的安装、frontmatter 与脚本机械检�
 ## 结构
 
 ```
-.agents/skills/                          技能（自包含，唯一需要安装的东西）
+.agents/skills/                          完整版技能（自包含，唯一需要安装的东西）
   init/                     初始化：访谈 + 落盘 + 骨架脚手架
     SKILL.md                             分阶段访谈流程
     scaffold.mjs                         把 templates/ 生成到项目根
@@ -90,6 +107,11 @@ Codex 目前只验证了五个 Skill 的安装、frontmatter 与脚本机械检�
   ship-change/                           交付改动的标准流程（含复盘蒸馏）
   record-decision/                       把技术取舍写成 ADR
   maintain-context/                      体检 + 合并收件箱 + 删过期内容
+lite/                                    轻量版发行包（与完整版二选一）
+  README.md                              安装 / 用法 / 与完整版差异
+  scaffold.mjs                           把轻量模板生成到项目根
+  skills/                                init + maintain 两个轻量技能
+  templates/                             轻量骨架：AGENTS.md.tmpl、.gitignore、docs/plan.md、docs/log.md
 tests/                                   框架脚本冒烟测试（node --test）
 .github/workflows/ci.yml                 框架自身的 CI
 README.md / LICENSE / .gitignore / .gitattributes
@@ -111,6 +133,8 @@ README.md / LICENSE / .gitignore / .gitattributes
 - **为什么 `roadmap.md` 必须有「明确不做」**：挡掉 agent 自作主张的扩张。
 - **为什么单一事实源**：一份 `AGENTS.md` + 一份 `.agents/skills/`，不生成任何镜像副本——镜像会制造漂移，而漂移需要第二个机制去盯，属于自造复杂度。
 - **为什么触发用散文而非机器契约**：DSH 按 `description` 触发技能，不消费优先级表或契约文件。状态驱动的技能锚定确定性信号（`init` 锚 `AGENTS.md` 顶部的「这个仓库还没初始化」引用块、`maintain-context` 锚脚本报错），意图驱动的技能靠子步骤串起来（init→product-design、ship-change→record-decision）。加第二份机器可读契约只会制造漂移，属于自造复杂度。
+- **为什么 lite 自带一份 scaffold 而不是复用完整版**：`lite/` 要能被单独拷走安装，不能依赖完整版技能目录里的路径。重复约一百行路径与符号链接防线是发行独立性的代价；测试用三处版本号一致和相同的符号链接用例把两份 scaffold 锁在同一个行为边界里。
+- **为什么轻量版不是把完整版删几行**：个人 / 中小型项目的瓶颈不是"问题太多"，而是"文档和流程比项目本身活得还久"。lite 因此砍掉自动体检、evals 和 ADR 编号系统，把闭环缩成"任务末尾追加 `docs/log.md` → `/maintain` 合并"；也不问敏感数据、不推荐换完整版，只保留和具体功能实现相关的最小问题集。
 - **为什么框架 `AGENTS.md` 也带标记**：GitHub Template 会把仓库根目录的 `AGENTS.md` 原样复制进新仓库，而它开头写着“不要运行 init”——不处理会打断模板主路径。给框架维护者手册加 `FRAMEWORK-AGENTS` 标记，`scaffold.mjs` 只有在它和 README 的 `FRAMEWORK-README` 标记**同时**命中时才替换，用户自己的 `AGENTS.md` 依旧绝不覆盖。
 
 ## English summary
@@ -119,7 +143,9 @@ README.md / LICENSE / .gitignore / .gitattributes
 
 Language-agnostic — the skeleton is Markdown plus one zero-dependency Node script.
 
-The five Skills can be installed in Codex, but runtime routing and the complete cross-Skill workflow have not yet been validated there; Codex is not currently an officially supported host.
+A `lite/` edition ships two skills (`init` and `maintain`) and four skeleton files for personal and small-to-medium projects that want long-term iteration without PR/CL/code-review overhead; it has no audit script, no evals, and a three-question interview focused on concrete feature implementation, with no safety valve pushing users to the full edition.
+
+The five full-edition Skills can be installed in Codex, but runtime routing and the complete cross-Skill workflow have not yet been validated there; Codex is not currently an officially supported host.
 
 ## License
 

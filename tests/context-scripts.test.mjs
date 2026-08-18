@@ -1,10 +1,10 @@
-// scaffold.mjs 与 audit-context.mjs 的冒烟测试。零依赖：node:test + child_process。
+// 完整版 scaffold.mjs、audit-context.mjs 与 lite/scaffold.mjs 的冒烟测试。零依赖：node:test + child_process。
 // 运行：node --test（或 node --test tests/context-scripts.test.mjs）
-// 覆盖：骨架生成与幂等、.tmpl 后缀剥离、scaffold 不安装技能、.gitignore 两处同步、--dry-run、
+// 覆盖：完整版骨架生成与幂等、.tmpl 后缀剥离、scaffold 不安装技能、.gitignore 两处同步、--dry-run、
 //       --update-framework 的覆盖边界、符号链接边界（含 --root 本身为符号链接）、
 //       参数校验、--help、audit 在初始化前 / 装完技能后的状态、轻量欠账单独计数、
 //       时效性检查用 git 提交时间而非 mtime、孤儿文档检查递归 docs/ 子目录、
-//       框架仓库自身的体检目标。
+//       框架仓库自身的体检目标；lite 版骨架生成、幂等、不覆盖用户文件、发行包形状。
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -29,6 +29,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..");
 const SCAFFOLD = join(REPO, ".agents", "skills", "init", "scaffold.mjs");
 const TEMPLATE_AUDIT = join(REPO, ".agents", "skills", "init", "templates", "scripts", "audit-context.mjs");
+const LITE_SCAFFOLD = join(REPO, "lite", "scaffold.mjs");
+const LITE_SKILL_NAMES = ["init", "maintain"];
+const LITE_SKELETON_FILES = ["AGENTS.md", ".gitignore", "docs/plan.md", "docs/log.md"];
 const SKILL_NAMES = ["init", "product-design", "ship-change", "record-decision", "maintain-context"];
 const SKELETON_FILES = [
   "AGENTS.md",
@@ -59,6 +62,12 @@ const withDir = (fn) => {
 const scaffoldProject = (dir) => {
   git(["init", "-q"], { cwd: dir });
   const r = node([SCAFFOLD, "--root", dir]);
+  assert.equal(r.status, 0, r.stderr);
+  return r;
+};
+const scaffoldLiteProject = (dir) => {
+  git(["init", "-q"], { cwd: dir });
+  const r = node([LITE_SCAFFOLD, "--root", dir]);
   assert.equal(r.status, 0, r.stderr);
   return r;
 };
@@ -103,6 +112,95 @@ test("scaffold 在空 git 仓库生成完整骨架，重跑幂等，且能自动
     assert.match(second.stdout, /新建 0 个文件/);
     assert.match(second.stdout, /跳过 12 个已存在文件/);
   }));
+
+test("lite scaffold 在空 git 仓库生成 4 个轻量骨架，重跑幂等，且能自动定位项目根", () =>
+  withDir((dir) => {
+    const first = scaffoldLiteProject(dir);
+    assert.match(first.stdout, /context-dev lite v/);
+    assert.match(first.stdout, /新建 4 个文件/);
+    for (const f of LITE_SKELETON_FILES) {
+      assert.ok(existsSync(join(dir, f)), `缺少 ${f}`);
+    }
+    // 未挂载技能时提示安装，但不替用户决定装全局还是项目级
+    assert.match(first.stderr, /还没挂载轻量技能/);
+
+    const implicit = node([LITE_SCAFFOLD], { cwd: dir });
+    assert.equal(implicit.status, 0, implicit.stderr);
+    assert.ok(implicit.stdout.includes(`项目根：${dir}`), implicit.stdout);
+
+    const second = node([LITE_SCAFFOLD, "--root", dir]);
+    assert.equal(second.status, 0, second.stderr);
+    assert.match(second.stdout, /新建 0 个文件/);
+    assert.match(second.stdout, /跳过 4 个已存在文件/);
+  }));
+
+test("lite scaffold 只创建缺失文件，绝不覆盖用户已有的 AGENTS.md 与 docs", () =>
+  withDir((dir) => {
+    git(["init", "-q"], { cwd: dir });
+    writeFileSync(join(dir, "AGENTS.md"), "# 用户自己的手册\n");
+    mkdirSync(join(dir, "docs"));
+    writeFileSync(join(dir, "docs", "plan.md"), "# 用户自己的计划\n");
+
+    const r = node([LITE_SCAFFOLD, "--root", dir]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(readFileSync(join(dir, "AGENTS.md"), "utf8"), "# 用户自己的手册\n");
+    assert.equal(readFileSync(join(dir, "docs", "plan.md"), "utf8"), "# 用户自己的计划\n");
+    assert.ok(existsSync(join(dir, "docs", "log.md")));
+    assert.ok(existsSync(join(dir, ".gitignore")));
+    assert.match(r.stdout, /跳过 2 个已存在文件/);
+  }));
+
+test("lite scaffold --dry-run 只预览不写入，--help 正常显示用法", () =>
+  withDir((dir) => {
+    const dry = node([LITE_SCAFFOLD, "--root", dir, "--dry-run"]);
+    assert.equal(dry.status, 0, dry.stderr);
+    assert.match(dry.stdout, /\[dry-run\] 预览，未写入任何文件/);
+    assert.equal(readdirSync(dir).length, 0);
+
+    const help = node([LITE_SCAFFOLD, "--help"]);
+    assert.equal(help.status, 0);
+    assert.match(help.stdout, /用法：node scaffold\.mjs/);
+  }));
+
+test("lite scaffold 与完整版同样拒绝符号链接根和非法参数", () =>
+  withDir((dir) => {
+    const outside = join(dir, "outside");
+    const link = join(dir, "project");
+    mkdirSync(outside);
+    symlinkSync(outside, link, process.platform === "win32" ? "junction" : "dir");
+    const symlinkRoot = node([LITE_SCAFFOLD, "--root", link]);
+    assert.equal(symlinkRoot.status, 1);
+    assert.match(symlinkRoot.stderr, /拒绝把符号链接作为项目根：/);
+    assert.equal(readdirSync(outside).length, 0);
+
+    const missing = node([LITE_SCAFFOLD, "--root"]);
+    assert.equal(missing.status, 2);
+    assert.match(missing.stderr, /--root 需要一个目录参数/);
+
+    const flagAsRoot = node([LITE_SCAFFOLD, "--root", "--dry-run"]);
+    assert.equal(flagAsRoot.status, 2);
+    assert.match(flagAsRoot.stderr, /--root 需要一个目录参数/);
+
+    const unknown = node([LITE_SCAFFOLD, "--frobnicate"]);
+    assert.equal(unknown.status, 2);
+    assert.match(unknown.stderr, /未知参数：--frobnicate/);
+  }));
+
+test("lite 发行包形状：两个技能 frontmatter 齐全，模板里的 AGENTS.md 带 .tmpl 后缀", () => {
+  for (const name of LITE_SKILL_NAMES) {
+    const file = join(REPO, "lite", "skills", name, "SKILL.md");
+    assert.ok(existsSync(file), `lite 缺少技能 ${name}`);
+    const text = readFileSync(file, "utf8");
+    const fm = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    assert.ok(fm, `${name}/SKILL.md 缺少 frontmatter`);
+    const declaredName = fm[1].match(/^name:\s*(.+)$/m)?.[1]?.trim();
+    const description = fm[1].match(/^description:\s*([\s\S]*?)(?=\r?\n[a-zA-Z_-]+:|$)/m)?.[1]?.trim();
+    assert.equal(declaredName, name);
+    assert.ok(description && description.length >= 40, `${name} description 太短，宿主可能无法触发`);
+  }
+  assert.ok(existsSync(join(REPO, "lite", "templates", "AGENTS.md.tmpl")));
+  assert.equal(existsSync(join(REPO, "lite", "templates", "AGENTS.md")), false);
+});
 
 test("模板里的 AGENTS.md.tmpl 落到项目根时剥掉后缀，项目里不残留 .tmpl", () =>
   withDir((dir) => {
@@ -281,15 +379,15 @@ test("--help 显示用法并以 0 退出", () => {
   assert.match(r.stdout, /用法：node scaffold\.mjs/);
 });
 
-test("CONTEXT_DEV_VERSION 在 scaffold 与 audit 两份脚本中一致", () => {
-  const scaffoldText = readFileSync(SCAFFOLD, "utf8");
-  const auditText = readFileSync(TEMPLATE_AUDIT, "utf8");
+test("CONTEXT_DEV_VERSION 在完整版 scaffold、audit 与 lite scaffold 三份脚本中一致", () => {
   const versionRe = /CONTEXT_DEV_VERSION = "([^"]+)"/;
-  const scaffoldVersion = scaffoldText.match(versionRe)?.[1];
-  const auditVersion = auditText.match(versionRe)?.[1];
-  assert.ok(scaffoldVersion, "scaffold.mjs 缺少 CONTEXT_DEV_VERSION");
-  assert.ok(auditVersion, "audit-context.mjs 缺少 CONTEXT_DEV_VERSION");
-  assert.equal(auditVersion, scaffoldVersion, "两份脚本的 CONTEXT_DEV_VERSION 不一致");
+  const versions = [SCAFFOLD, TEMPLATE_AUDIT, LITE_SCAFFOLD].map((file) => {
+    const version = readFileSync(file, "utf8").match(versionRe)?.[1];
+    assert.ok(version, `${file} 缺少 CONTEXT_DEV_VERSION`);
+    return version;
+  });
+  assert.equal(versions[1], versions[0], "完整版 scaffold 与 audit-context.mjs 的 CONTEXT_DEV_VERSION 不一致");
+  assert.equal(versions[2], versions[0], "lite scaffold 与完整版脚本的 CONTEXT_DEV_VERSION 不一致");
 });
 
 test("audit --root 能体检指定目录；--help 显示用法", () => {
